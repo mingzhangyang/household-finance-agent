@@ -6,7 +6,7 @@ open. Never convert “not run”, skipped or environment-blocked checks to pass
 
 ## Collect evidence at an exact commit
 
-Use a clean checkout, Python 3.10+ and Node.js. The collector has no user-input-file
+Use a clean Linux checkout with /proc, Python 3.10+ and Node.js. The collector has no user-input-file
 option: only the checked-in fictional household is used. Choose a **new** local
 folder outside the checkout, or under ignored `results/`:
 
@@ -23,6 +23,11 @@ artifacts. It rechecks source identity after execution. A dirty run can be usefu
 for development, but `exact_clean_commit=false` prevents it being presented as
 commit-level evidence. `release_approved` is always false: engineering checks cannot
 supply missing scope decisions or independent professional sign-off.
+
+Commands run in isolated process groups. On timeout, the collector kills the whole
+group and waits until no live group members remain before closing logs or hashing
+artifacts. Exited zombies cannot write and do not block cleanup. If cleanup cannot
+be verified, collection aborts without publishing a manifest.
 
 Without `--browser`, the browser status is `not_run`. With the flag, missing Node,
 Playwright or browser binaries are failures, not silent skips. GitHub Actions is

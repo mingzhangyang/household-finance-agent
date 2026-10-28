@@ -44,6 +44,26 @@ class StructuredMutations(unittest.TestCase):
             with self.subTest(case=i):
                 self.check_rejected(mutation)
 
+    def test_legacy_metadata_absent_with_matching_plan(self):
+        result=copy.deepcopy(self.result)
+        del result['evidence_status']
+        del result['input_provenance']
+        self.assertTrue(verify(result,self.plan)['passed'])
+
+    def test_provenance_remains_checked_without_evidence_status(self):
+        result=copy.deepcopy(self.result)
+        del result['evidence_status']
+        self.assertTrue(verify(result,self.plan)['passed'])
+        result['input_provenance']['mode']='not_provided'
+        with self.assertRaisesRegex(VerifyFailure,'input_provenance mismatched'):
+            verify(result,self.plan)
+
+    def test_evidence_status_requires_provenance(self):
+        result=copy.deepcopy(self.result)
+        del result['input_provenance']
+        with self.assertRaises(VerifyFailure):
+            verify(result,self.plan)
+
     def test_malformed_root_raises_public_failure(self):
         for result in (None, [], {}, {'engine_version':'2.2-auditable-restricted'}):
             with self.subTest(result=result), self.assertRaises(VerifyFailure):

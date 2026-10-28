@@ -9,6 +9,8 @@ import hashlib
 import json
 import os
 import platform
+import signal
+import time
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -23,6 +25,54 @@ def git(*args):
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def group_has_live_processes(pgid):
+    # Linux /proc distinguishes exited zombies (which cannot write) from live
+    # descendants. killpg(..., 0) alone can wait forever on orphan zombies.
+    if not Path('/proc/self/stat').exists():
+        raise RuntimeError('Cannot verify process-group cleanup without Linux /proc')
+    for stat in Path('/proc').glob('[0-9]*/stat'):
+        try:
+            fields = stat.read_text().rsplit(')', 1)[1].split()
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        if int(fields[2]) == pgid and fields[0] not in ('Z', 'X'):
+            return True
+    return False
+
+
+def stop_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+    deadline = time.monotonic() + 5
+    while group_has_live_processes(process.pid):
+        if time.monotonic() >= deadline:
+            # Fail closed: never publish hashes if writers may still be alive.
+            raise RuntimeError('Command descendants did not stop; evidence not collected')
+        time.sleep(.01)
+
+
+def run_command(command, log, env, timeout=300):
+    with log.open('w') as stream:
+        try:
+            process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=stream,
+                stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as exc:
+            stream.write(str(exc)+'\n')
+            return -1
+        try:
+            return process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            stop_group(process)
+            stream.write(str(exc)+'\n')
+            return -1
+        except BaseException:
+            stop_group(process)
+            raise
 
 
 def main():
@@ -49,13 +99,7 @@ def main():
 
     def run(name, command):
         log = out/(name+'.log')
-        with log.open('w') as stream:
-            try:
-                result = subprocess.run(command,cwd=ROOT,env=env,stdout=stream,
-                                        stderr=subprocess.STDOUT,timeout=300)
-                code = result.returncode
-            except (OSError,subprocess.TimeoutExpired) as exc:
-                stream.write(str(exc)+'\n'); code = -1
+        code = run_command(command, log, env)
         evidence['commands'].append({'name':name,'argv':command,'exit_code':code,
                                      'status':'passed' if code==0 else 'failed','log':log.name})
         return code==0
