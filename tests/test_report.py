@@ -14,6 +14,7 @@ sys.path.insert(0,str(ROOT/'scripts'))
 from audit_plan import evaluate,validate
 from render_audit import create_scenarios,render
 from verify_outputs import verify
+from verify_replay import verify_replay
 
 
 class ReportData(HTMLParser):
@@ -95,11 +96,39 @@ class ReportRoundTrip(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             report=render(fixture(),Path(tmp)/'report.html')
             for mode in ('empty','invalid-json','failed-verification','second-scenario',
-                         'numeric-mutations','tax-method-text'):
+                         'numeric-mutations','tax-method-text','missing-plan-json',
+                         'invalid-plan-json','mismatched-plan-json'):
                 with self.subTest(mode=mode):
                     check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),mode],
                                          capture_output=True,text=True)
                     self.assertEqual(check.returncode,0,check.stdout+check.stderr)
+
+    @unittest.skipUnless(shutil.which('node'),'Node.js required for report handler regression')
+    def test_downloaded_plans_and_audit_bundles_replay_in_python(self):
+        for variant in ('fixture', 'float_encodings'):
+            plan=fixture()
+            plan['name']='虚构 </script> <scenario> & round-trip'
+            if variant=='float_encodings':
+                plan['accounts'][0]['balance']=80000.0
+                plan['members'][0]['wage_growth']=-0.0
+                plan['assumptions']['inflation']=1e-7
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as tmp:
+                out=Path(tmp)
+                report=render(plan,out/'report.html')
+                parser=ReportData();parser.feed(report.read_text())
+                data=json.loads(parser.raw)
+                check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),
+                                      'export-files',str(out)],capture_output=True,text=True)
+                self.assertEqual(check.returncode,0,check.stdout+check.stderr)
+                for i,original in enumerate(data['plans']):
+                    standalone=json.loads((out/f'plan-{i}.json').read_text())
+                    audit=json.loads((out/f'audit-{i}.json').read_text())
+                    for export_name,exported in [('standalone',standalone),('audit',audit['plan'])]:
+                        with self.subTest(variant=variant,scenario=i,export=export_name):
+                            # Equality of numeric values alone misses 143000.0 -> 143000.
+                            self.assertTrue(verify_replay(audit['result'],exported)['passed'])
+                            self.assertEqual(json.dumps(exported,sort_keys=True,ensure_ascii=False),
+                                             json.dumps(original,sort_keys=True,ensure_ascii=False))
 
     @unittest.skipUnless(shutil.which('node'),'Node.js required for report handler regression')
     def test_report_status_and_download_handlers(self):

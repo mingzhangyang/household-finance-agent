@@ -15,6 +15,13 @@ if (invalidMode === 'second-scenario') {
   const broken=JSON.parse(raw);broken.results[1].deterministic_annual_ledger.rows[0].tax.federal_income_tax='invalid';
   raw=JSON.stringify(broken);
 }
+if (['missing-plan-json','invalid-plan-json','mismatched-plan-json'].includes(invalidMode)) {
+  const broken=JSON.parse(raw);
+  if(invalidMode==='missing-plan-json')delete broken.plan_json;
+  else if(invalidMode==='invalid-plan-json')broken.plan_json[3]='{';
+  else {const changed=JSON.parse(broken.plan_json[3]);changed.living_expenses_annual_real+=1;broken.plan_json[3]=JSON.stringify(changed);}
+  raw=JSON.stringify(broken);
+}
 function boot(raw) {
 const downloads = [];
 const blobs = new Map();
@@ -109,7 +116,7 @@ if (invalidMode === 'tax-method-text') {
   console.log('PASS: explicit text-valued tax method remains supported');
   process.exit(0);
 }
-if (invalidMode) {
+if (invalidMode && invalidMode !== 'export-files') {
   assertRejected(raw,true);
   console.log('PASS: invalid report hides conclusions and disables exports: '+invalidMode);
   process.exit(0);
@@ -119,6 +126,13 @@ const {element,context,downloads}=boot(raw);
   for (let i = 0; i < payload.plans.length; i++) {
     element('scenario-buttons').children[i].click();
     assert.equal(context.window.__financialAudit.getActive(), i);
+    if (invalidMode === 'export-files') {
+      element('download-plan').click();element('download-json').click();
+      const [plan,audit]=downloads.slice(-2);
+      fs.writeFileSync(`${process.argv[4]}/plan-${i}.json`,await plan.blob.text());
+      fs.writeFileSync(`${process.argv[4]}/audit-${i}.json`,await audit.blob.text());
+      continue;
+    }
     assert.equal(element('year-status').textContent, '出现资金/规则缺口');
     // The fixture has only a skipped conversion in 2027 and is funded in 2028.
     element('year-select').value = '2028';
@@ -134,5 +148,6 @@ const {element,context,downloads}=boot(raw);
       plan: payload.plans[i], result: payload.results[i], verification: payload.verification[i],
     });
   }
-  console.log('PASS: yearly skipped-conversion status and four scenario plan/audit downloads');
+  console.log(invalidMode==='export-files'?'PASS: exported four actual plan/audit download blobs':
+    'PASS: yearly skipped-conversion status and four scenario plan/audit downloads');
 })().catch(error => { console.error(error); process.exitCode = 1; });

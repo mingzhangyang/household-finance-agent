@@ -49,7 +49,10 @@ async function main() {
           const download=await promise, file=path.join(output,`${name}-${i}-${filename}`);
           await download.saveAs(file);
           const text=await fs.readFile(file,'utf8');
-          if(button==='download-plan')assert.deepEqual(JSON.parse(text),payload.plans[i]);
+          if(button==='download-plan') {
+            assert.deepEqual(JSON.parse(text),payload.plans[i]);
+            assert.equal(text,payload.plan_json[i]); // Preserve 143000.0, -0.0, etc.
+          }
           if(button==='download-json')assert.deepEqual(JSON.parse(text),{plan:payload.plans[i],result,verification:payload.verification[i]});
           if(button==='download-csv') {
             const lines=text.trim().split('\n'), keys=lines.shift().split(',');

@@ -65,9 +65,11 @@ function validateReportData(data){
  // Validate every scenario and year before rendering or registering exports.
  // The saved verification flag alone cannot establish JSON type integrity.
  if(!Array.isArray(data.results)||data.results.length===0||
-    !Array.isArray(data.plans)||!Array.isArray(data.verification)||!Array.isArray(data.labels)||
-    [data.plans,data.verification,data.labels].some(a=>a.length!==data.results.length)) throw Error('Invalid scenario bundle');
+    !Array.isArray(data.plans)||!Array.isArray(data.plan_json)||!Array.isArray(data.verification)||!Array.isArray(data.labels)||
+    [data.plans,data.plan_json,data.verification,data.labels].some(a=>a.length!==data.results.length)) throw Error('Invalid scenario bundle');
  for(const [i,r] of data.results.entries()){
+  if(typeof data.plan_json[i]!=='string'||
+     JSON.stringify(JSON.parse(data.plan_json[i]))!==JSON.stringify(data.plans[i]))throw Error('Mismatched plan export');
   const rows=r.deterministic_annual_ledger.rows;
   requireArray(rows);requireArray(r.annual_real_percentiles,rows.length);
   requireArray(r.simulated_path_manifest);requireInteger(r.trials);
@@ -191,8 +193,10 @@ function renderChecked(){const r=get(),yr=r.deterministic_annual_ledger.rows;
  text('input-quality','期初余额口径: '+r.opening_balance_status+' · 输入来源状态: '+r.input_provenance.mode+' · 登记证据 '+r.input_provenance.register.length+' 条（并不等于原始文件已独立核查）');
  text('input-hash','输入 SHA256: '+r.input_sha256);text('engine-hash','计算代码 SHA256: '+r.engine_source_sha256);
  }
-$('download-json').onclick=()=>save('financial-audit.json',JSON.stringify({plan:data.plans[active],result:get(),verification:data.verification[active]},null,2),'application/json');
-$('download-plan').onclick=()=>save('financial-plan.json',JSON.stringify(data.plans[active],null,2),'application/json');
+// Splice the trusted Python JSON text, without parsing/stringifying the plan.
+// Both export forms must preserve the numeric spelling used by its SHA256.
+$('download-json').onclick=()=>save('financial-audit.json','{\n"plan":'+data.plan_json[active]+',\n"result":'+JSON.stringify(get(),null,2)+',\n"verification":'+JSON.stringify(data.verification[active],null,2)+'\n}','application/json');
+$('download-plan').onclick=()=>save('financial-plan.json',data.plan_json[active],'application/json');
 $('download-csv').onclick=()=>{const rows=get().deterministic_annual_ledger.rows;const fields=['year','opening_total','investment_growth_total','wages_gross','pretax_contributions','social_security_gross','pension_gross','living_expenses_paid','tax_due_total','tax_paid','unpaid_tax','closing_total','reconciliation_residual'];save('financial-audit-ledger.csv',fields.join(',')+'\n'+rows.map(r=>fields.map(k=>r[k]).join(',')).join('\n')+'\n','text/csv')};
 $('print').onclick=()=>window.print();
 window.__financialAudit={getActive:()=>active,getYear:()=>selectedYear,getReport:()=>get()};render();
