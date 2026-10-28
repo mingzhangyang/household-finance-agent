@@ -62,6 +62,9 @@ def _verify(x,plan=None,engine_dir=None):
         for key,expected in [('scenario',plan['name']),
                              ('opening_balance_status',plan['opening_balance_status']),
                              ('input_provenance',plan.get('input_provenance',{'mode':'not_provided','register':[]}))]:
+            if (key=='input_provenance' and 'input_provenance' not in x
+                    and 'evidence_status' not in x):
+                continue  # Legacy v2.2: no provenance or evidence claims to compare.
             if x[key]!=expected:
                 raise VerifyFailure(f'{key} mismatched to plan')
     count=x['trials']
