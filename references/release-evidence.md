@@ -9,7 +9,11 @@ open. Never convert “not run”, skipped or environment-blocked checks to pass
 Use a clean Linux checkout with subreaper support and /proc mounted in the same
 PID namespace, Python 3.10+ and Node.js. The collector has no user-input-file
 option: only the checked-in fictional household is used. Choose a **new** local
-folder outside the checkout, or under ignored `results/`:
+folder outside the checkout, or under ignored `results/`. Node.js is required even
+without `--browser`, because the offline suite includes report-handler and exported
+plan replay checks. If `node` is unavailable on PATH, collection exits 2 before
+creating the output directory or a manifest; skipped Node tests cannot produce a
+successful evidence bundle.
 
 ```sh
 python scripts/collect_evidence.py --output /tmp/finance-evidence-run1

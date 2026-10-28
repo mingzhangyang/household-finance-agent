@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -48,6 +49,10 @@ def main():
     ap.add_argument('--output', type=Path, required=True, help='new private local directory')
     ap.add_argument('--browser', action='store_true', help='require actual Chromium acceptance')
     args = ap.parse_args()
+    # Report handler and download/replay tests need Node even without --browser.
+    # unittest skips those tests when Node is missing; zero exit is not enough.
+    if shutil.which('node') is None:
+        ap.error('Node.js is required for evidence collection, including offline report checks')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     tracked = git('ls-files').splitlines()

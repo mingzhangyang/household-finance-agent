@@ -24,6 +24,19 @@ if SUPERVISION_UNAVAILABLE and os.environ.get('HFA_REQUIRE_SUPERVISION') == '1':
 
 
 class SupervisionFailure(unittest.TestCase):
+    def test_missing_node_blocks_collection_even_without_browser(self):
+        for browser in (False,True):
+            with self.subTest(browser=browser), tempfile.TemporaryDirectory() as temp:
+                out=Path(temp)/'evidence'
+                env=os.environ.copy(); env['PATH']=''
+                command=[sys.executable,str(collect_evidence.ROOT/'scripts/collect_evidence.py'),
+                         '--output',str(out)]
+                if browser: command.append('--browser')
+                result=subprocess.run(command,env=env,capture_output=True,text=True)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertIn('Node.js is required',result.stderr)
+                self.assertFalse(out.exists())
+
     def test_namespace_mismatch_prevents_command_launch(self):
         with patch.object(evidence_process.os, 'getpid', return_value=-1), \
              patch.object(evidence_process.subprocess, 'Popen') as launch:
@@ -37,6 +50,7 @@ class SupervisionFailure(unittest.TestCase):
             # A supervisor returning zero without proving cleanup is not a pass.
             with patch.object(sys,'argv',['collect_evidence','--output',str(out)]), \
                  patch.object(collect_evidence,'git',return_value=''), \
+                 patch.object(collect_evidence.shutil,'which',return_value='/test/node'), \
                  patch.object(collect_evidence.platform,'platform',return_value='test'), \
                  patch.object(collect_evidence.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
                 with self.assertRaisesRegex(RuntimeError,'supervision unconfirmed'):
