@@ -34,7 +34,7 @@ def timeline(members,start_year,end_year,*,annual_spending,
                 raise LifecycleError(f"{m['id']} missing integer {k}")
         if not 20<=m["retirement_age"]<=90 or not 62<=m["claim_age"]<=70:
             raise LifecycleError("invalid retirement/claim age")
-        if m["death_year"]<m["birth_year"] or m["death_year"]>end_year+1:
+        if m["death_year"]<m["birth_year"] or m["death_year"]>m["birth_year"]+125:
             raise LifecycleError("invalid death year")
         for k in ("annual_wages","annual_pension","annual_social_security"):
             money(m.get(k),k)
