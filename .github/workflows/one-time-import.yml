@@ -2,7 +2,7 @@ name: One-time Skill source import
 on:
   push:
     branches: [feat/professional-model-foundation]
-    paths: [".bootstrap/source.b64"]
+    paths: [".bootstrap/ready.txt"]
   workflow_dispatch:
 permissions:
   contents: write
@@ -19,7 +19,7 @@ jobs:
           python - <<'PY'
           import base64, json, zlib
           from pathlib import Path
-          raw = Path(".bootstrap/source.b64").read_text()
+          raw = "".join(p.read_text() for p in sorted(Path(".bootstrap").glob("part*.txt")))
           data = json.loads(zlib.decompress(base64.b64decode(raw)))
           root = Path.cwd().resolve()
           for filename, content in data.items():
