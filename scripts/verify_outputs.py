@@ -8,6 +8,7 @@ Arithmetic consistency is not a tax-law certification or market calibration.
 import argparse
 import hashlib
 import json
+from datetime import date
 from math import isfinite, sqrt
 from pathlib import Path
 
@@ -43,11 +44,51 @@ def verify(x,plan=None,engine_dir=None):
         raise VerifyFailure(f'malformed output: {exc}') from exc
 
 
+def verify_provenance(provenance):
+    """Check output metadata independently, even when no input plan is supplied.
+
+    This checks register syntax, not source documents or pointer resolution.
+    A supplied plan is still needed to compare the actual provenance values.
+    """
+    if not isinstance(provenance,dict) or set(provenance)!={'mode','register'}:
+        raise VerifyFailure('input_provenance must contain mode and register')
+    mode=provenance['mode']
+    if mode not in ('not_provided','fictional_demo','unverified_user_data','documented_verified'):
+        raise VerifyFailure('unsupported input_provenance mode')
+    register=provenance['register']
+    if not isinstance(register,list):
+        raise VerifyFailure('input_provenance register must be a list')
+    if mode=='not_provided' and register:
+        raise VerifyFailure('not_provided provenance must have an empty register')
+    if mode=='documented_verified' and not register:
+        raise VerifyFailure('documented provenance requires a register')
+    for item in register:
+        if not isinstance(item,dict) or set(item)!={'json_pointer','evidence_id','source_type','as_of_date','confidence'}:
+            raise VerifyFailure('invalid input_provenance register entry')
+        if not isinstance(item['json_pointer'],str) or not item['json_pointer'].startswith('/'):
+            raise VerifyFailure('input_provenance entry requires JSON Pointer')
+        if not isinstance(item['evidence_id'],str) or not item['evidence_id']:
+            raise VerifyFailure('input_provenance entry requires evidence_id')
+        if item['source_type'] not in ('user_statement','statement','tax_form','ssa_statement','estimate','fictional_fixture'):
+            raise VerifyFailure('unsupported input_provenance source_type')
+        if item['confidence'] not in ('documented','supplied','assumed'):
+            raise VerifyFailure('unsupported input_provenance confidence')
+        dt=item['as_of_date']
+        if not isinstance(dt,str) or len(dt)!=10:
+            raise VerifyFailure('input_provenance date must be YYYY-MM-DD')
+        try:
+            date.fromisoformat(dt)
+        except ValueError as exc:
+            raise VerifyFailure('invalid input_provenance date') from exc
+
+
 def _verify(x,plan=None,engine_dir=None):
     if x.get('engine_version')!='2.2-auditable-restricted':
         raise VerifyFailure('unexpected or unaudited engine')
     # Added by M0; older v2.2 outputs without metadata remain arithmetically
     # verifiable, but no evidence claims may be invented or upgraded.
+    if 'input_provenance' in x:
+        verify_provenance(x['input_provenance'])
     if 'evidence_status' in x:
         expected={'contract_version':'1.0','model':'restricted_research',
             'input':x['input_provenance']['mode'],'input_independently_verified':False,

@@ -54,7 +54,7 @@ class StructuredMutations(unittest.TestCase):
         result=copy.deepcopy(self.result)
         del result['evidence_status']
         self.assertTrue(verify(result,self.plan)['passed'])
-        result['input_provenance']['mode']='not_provided'
+        result['input_provenance']['mode']='unverified_user_data'
         with self.assertRaisesRegex(VerifyFailure,'input_provenance mismatched'):
             verify(result,self.plan)
 
@@ -63,6 +63,54 @@ class StructuredMutations(unittest.TestCase):
         del result['input_provenance']
         with self.assertRaises(VerifyFailure):
             verify(result,self.plan)
+
+    def test_output_only_provenance_must_have_valid_structure(self):
+        mutations=[
+            lambda r:r.update(input_provenance=None),
+            lambda r:r['input_provenance'].update(register=None),
+            lambda r:r['input_provenance'].update(register=[None]),
+            lambda r:r['input_provenance'].update(register=[{}]),
+            lambda r:r['input_provenance'].update(extra=True),
+            lambda r:r['input_provenance']['register'][0].update(evidence_id=''),
+            lambda r:r['input_provenance']['register'][0].update(json_pointer=None),
+            lambda r:r['input_provenance']['register'][0].update(source_type='verified'),
+            lambda r:r['input_provenance']['register'][0].update(confidence='certain'),
+            lambda r:r['input_provenance']['register'][0].update(as_of_date='2026-02-30'),
+        ]
+        for evidence in (True,False):
+            for i,mutate in enumerate(mutations):
+                with self.subTest(evidence=evidence,case=i):
+                    result=copy.deepcopy(self.result)
+                    if not evidence: del result['evidence_status']
+                    mutate(result)
+                    with self.assertRaises(VerifyFailure): verify(result)
+            for mode in (None,False,1,[],{},'externally_approved','not_provided'):
+                with self.subTest(evidence=evidence,mode=mode):
+                    result=copy.deepcopy(self.result)
+                    result['input_provenance']['mode']=mode
+                    if evidence: result['evidence_status']['input']=mode
+                    else: del result['evidence_status']
+                    with self.assertRaises(VerifyFailure): verify(result)
+
+    def test_output_only_valid_and_legacy_provenance(self):
+        for mode in ('fictional_demo','unverified_user_data','documented_verified',None):
+            plan=copy.deepcopy(self.plan)
+            if mode is None: del plan['input_provenance']
+            else: plan['input_provenance']['mode']=mode
+            if mode=='documented_verified':
+                pointers=['/living_expenses_annual_real']
+                pointers += [f'/accounts/{i}/balance' for i in range(len(plan['accounts']))]
+                pointers += [f'/accounts/{i}/basis' for i,a in enumerate(plan['accounts']) if a['kind']=='taxable']
+                pointers += [f'/members/{i}/{field}' for i in range(len(plan['members']))
+                             for field in ('annual_wages_2026','ss_annual_2026_real_at_chosen_claim_age')]
+                plan['input_provenance']['register']=[dict(json_pointer=p,evidence_id='fictional-test',
+                    source_type='fictional_fixture',confidence='documented',as_of_date='2026-01-01') for p in pointers]
+            result=evaluate(plan)
+            self.assertTrue(verify(result)['passed'])
+            del result['evidence_status']
+            self.assertTrue(verify(result)['passed'])
+            del result['input_provenance']
+            self.assertTrue(verify(result)['passed'])
 
     def test_malformed_root_raises_public_failure(self):
         for result in (None, [], {}, {'engine_version':'2.2-auditable-restricted'}):
