@@ -25,7 +25,7 @@ def quant(vals,q):
     return vals[lo]*(1-pos+lo)+vals[hi]*(pos-lo)
 
 def verify(x,plan=None,engine_dir=None):
-    if x.get('engine_version')!='2.1-auditable-restricted':
+    if x.get('engine_version')!='2.2-auditable-restricted':
         raise VerifyFailure('unexpected or unaudited engine')
     count=x['trials']
     manifest=x['simulated_path_manifest']
@@ -57,7 +57,18 @@ def verify(x,plan=None,engine_dir=None):
         close(row['tax']['federal_income_tax'],row['tax']['ordinary_tax']+row['tax']['capital_gains_tax'],f'{y}: federal tax')
         pf=row['payroll_tax']
         close(pf['total'],pf['social_security_tax']+pf['medicare_tax']+pf['additional_medicare_tax'],f'{y}: payroll tax')
-        close(row['tax_due_total'],row['tax']['federal_income_tax']+pf['total'],f'{y}: total due')
+        # Independent recomputation of statutory reference NIIT; no tax engine import.
+        tax=row['tax']
+        if tax['niit_rate'] != .038:
+            raise VerifyFailure(f'{y}: NIIT rate changed')
+        if tax['niit_threshold'] != (250000. if x['tax_policy']['filing_status']=='mfj' else 200000.):
+            raise VerifyFailure(f'{y}: NIIT threshold changed')
+        close(tax['niit_magi_assumed_equal_agi'],tax['adjusted_gross_income'],f'{y}: NIIT MAGI')
+        close(tax['niit_net_investment_income'],row['realized_ltcg']+row['growth_by_account'][row['cash_account_id']],f'{y}: NIIT income')
+        close(tax['niit_tax_base'],min(tax['niit_net_investment_income'],max(0.,tax['adjusted_gross_income']-tax['niit_threshold'])),f'{y}: NIIT base')
+        close(tax['niit_due'],tax['niit_tax_base']*.038,f'{y}: NIIT due')
+        close(tax['total_federal_income_and_niit'],tax['federal_income_tax']+tax['niit_due'],f'{y}: federal/NIIT')
+        close(row['tax_due_total'],tax['total_federal_income_and_niit']+pf['total'],f'{y}: total due')
         close(row['tax_paid']+row['unpaid_tax'],row['tax_due_total'],f'{y}: unpaid tax')
         close(row['living_expenses_paid']+row['unmet_spending'],row['living_expenses_due'],f'{y}: unmet living')
         close(row['tax']['long_term_gain_taxable'],sum(z['taxable'] for z in row['tax']['capital_gain_rate_lines']),f'{y}: LTCG bands')
@@ -85,7 +96,7 @@ def verify(x,plan=None,engine_dir=None):
         close(x['funded_and_target_fraction'],both/count,'terminal target fraction',.00001)
     if engine_dir is not None:
         actual=hashlib.sha256((engine_dir/'audit_plan.py').read_bytes()+
-                              (engine_dir/'tax2026.py').read_bytes()).hexdigest()
+                              (engine_dir/'tax2026.py').read_bytes()+(engine_dir/'tax_extensions.py').read_bytes()).hexdigest()
         if x['engine_source_sha256']!=actual:
             raise VerifyFailure('engine source SHA mismatch')
     return {'passed':True,'annual_rows':len(ledger),'mc_paths':count,
