@@ -31,7 +31,8 @@ RMD_DENOMINATORS = {
 }
 
 class ModelError(ValueError):
-    pass
+    """A rejected input/model run never produces a valid planning conclusion."""
+    code = 'INVALID_OR_UNSUPPORTED_PLAN'
 
 
 def _num(v,label,lo=0,hi=1e15):
@@ -59,6 +60,16 @@ def _allowed(obj,keys,context):
 
 
 def validate(p):
+    """Normalize malformed nested data into the public fail-closed exception."""
+    try:
+        return _validate(p)
+    except ModelError:
+        raise
+    except (KeyError, TypeError, AttributeError, IndexError) as exc:
+        raise ModelError('missing or malformed required plan data') from exc
+
+
+def _validate(p):
     if not isinstance(p,dict) or p.get('version')!='2.0':
         raise ModelError('audited model requires version 2.0; v1.0 is legacy illustrative only')
     _allowed(p,['version','name','currency','as_of_year','end_year','members','accounts',
@@ -475,6 +486,20 @@ def wilson_interval(success,total,z=1.96):
     return [round(max(0.,mid-margin),4),round(min(1.,mid+margin),4)]
 
 
+def evidence_status(p):
+    """Separate scope and provenance from arithmetic or professional approval."""
+    return {
+        'contract_version': '1.0',
+        'model': 'restricted_research',
+        'input': p.get('input_provenance', {}).get('mode', 'not_provided'),
+        'input_independently_verified': False,
+        'professional_review': 'not_recorded',
+        'market_calibration': 'not_validated',
+        'tax_rules': '2026_reference_with_hypothetical_future_indexing',
+        'full_household_conclusion': False,
+    }
+
+
 def evaluate(p):
     validate(p)
     canonical=json.dumps(p,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
@@ -513,6 +538,7 @@ def evaluate(p):
                            (Path(__file__).parent/'tax_extensions.py').read_bytes())).hexdigest()
     return {
         'engine_version':'2.2-auditable-restricted','policy':RULESET,'input_sha256':plan_sha,
+        'evidence_status':evidence_status(p),
         'input_provenance':p.get('input_provenance',{'mode':'not_provided','register':[]}),
         'engine_source_sha256':engine_source_hash,
         'scenario':p['name'],'opening_balance_status':p['opening_balance_status'],'tax_policy':p['tax_policy'],'year_range':[p['as_of_year']+1,p['end_year']],
