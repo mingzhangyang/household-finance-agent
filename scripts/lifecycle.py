@@ -53,7 +53,7 @@ def timeline(members,start_year,end_year,*,annual_spending,
         individual_ss=sum(m["annual_social_security"] for m in alive if year-m["birth_year"]>=m["claim_age"])
         survivor=len(members)==2 and len(alive)==1
         ss=float(survivor_total_ss_annual) if survivor else individual_ss
-        spending=annual_spending*(survivor_spending_fraction if survivor else 1)
+        spending=0. if not alive else annual_spending*(survivor_spending_fraction if survivor else 1)
         rows.append({"year":year,"alive":[m["id"] for m in alive],"gross_wages":wage,
                      "gross_pension":pension,"gross_social_security":ss,
                      "assumed_living_expenses":spending,
