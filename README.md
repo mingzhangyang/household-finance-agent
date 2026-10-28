@@ -25,8 +25,18 @@ Open `financial_audit_dashboard.html` locally in a browser. The tool can switch 
 
 ## Limits and status
 
-**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Taxes in 2027 and later use a **hypothetical indexed 2026 tax schedule**, not enacted future tax law; SSA's 2027 wage cap is explicitly a separate published exception. Some yearly timing conventions use year-end approximations.
+**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No integrated state income tax, NIIT, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Taxes in 2027 and later use a **hypothetical indexed 2026 tax schedule**, not enacted future tax law; SSA's 2027 wage cap is explicitly a separate published exception. Some yearly timing conventions use year-end approximations.
 
-The legacy v1 engine (`scripts/plan.py` and `scripts/render_dashboard.py`) remains available for historical compatibility **only**, and is not the default.
+Legacy v1 demonstration files are not part of this initial GitHub import. The audited core, independent verifier, report template, fictional input and professional reference modules are tracked here. The earlier full Skill ZIP remains a separate prior artifact until its remaining legacy/support files are deliberately imported.
 
 See `references/rules-provenance.md`, `references/audit-methodology.md`, and `references/validation-report.md`.
+## Research modules on the development branch
+
+These scripts are **independently runnable and versioned, but not wired into the main funding/tax loop**:
+
+- `scripts/tax_extensions.py`: 2026 federal NIIT, with caller-confirmed MAGI and net investment income.
+- `scripts/social_security.py`: 2026/2027 eligibility-year PIA from externally supplied AIME and monthly worker claiming factors; not SSA earnings-record reconstruction.
+- `scripts/lifecycle.py`: explicit death-year/survivor-spending scenario schedule; no actuarial mortality or filing-status engine.
+- `scripts/market_history.py`: dated historical stock/bond CSV analysis, rolling-window backtests. Included 19-year CSV is a regression fixture, **not a full market calibration**.
+
+Reference tests: `python -m unittest discover -s tests -p 'test_professional_models.py' -v`. The GitHub Actions workflow also runs the audited engine, output verifier, and offline report smoke test. See `references/professional-validation-gates.md` for incomplete integration and independent professional review criteria. Do not infer third-party certification from green tests.
