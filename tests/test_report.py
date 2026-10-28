@@ -94,7 +94,8 @@ class ReportRoundTrip(unittest.TestCase):
     def test_invalid_report_hides_conclusions_and_exports(self):
         with tempfile.TemporaryDirectory() as tmp:
             report=render(fixture(),Path(tmp)/'report.html')
-            for mode in ('empty','invalid-json','failed-verification','second-scenario'):
+            for mode in ('empty','invalid-json','failed-verification','second-scenario',
+                         'numeric-mutations','tax-method-text'):
                 with self.subTest(mode=mode):
                     check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),mode],
                                          capture_output=True,text=True)

@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const html = fs.readFileSync(process.argv[2], 'utf8');
 let raw = html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/)[1];
 const payload = JSON.parse(raw);
+const script = html.match(/<script>\s*('use strict';[\s\S]*?)<\/script>/)[1];
 const invalidMode = process.argv[3];
 if (invalidMode === 'empty') raw = JSON.stringify({plans:[],results:[],labels:[],verification:[]});
 if (invalidMode === 'invalid-json') raw = '{';
@@ -14,6 +15,7 @@ if (invalidMode === 'second-scenario') {
   const broken=JSON.parse(raw);broken.results[1].deterministic_annual_ledger.rows[0].tax.federal_income_tax='invalid';
   raw=JSON.stringify(broken);
 }
+function boot(raw) {
 const downloads = [];
 const blobs = new Map();
 let nextUrl = 0;
@@ -49,17 +51,70 @@ const context = vm.createContext({
         revokeObjectURL(url) {blobs.delete(url);}},
   setTimeout() {},
 });
-const script = html.match(/<script>\s*('use strict';[\s\S]*?)<\/script>/)[1];
 vm.runInContext(script, context);
-if (invalidMode) {
-  if (invalidMode === 'second-scenario') element('scenario-buttons').children[1].click();
+return {element,context,downloads};
+}
+function assertRejected(raw, beforeRender=false) {
+  const {element,context,downloads}=boot(raw);
   assert.equal(context.window.__financialAudit.error, 'invalid_report');
   assert.equal(element('report-error').hidden, false);
   assert.equal(element('report-content').style.display, 'none');
   for (const id of ['download-plan','download-json','download-csv','print']) assert.equal(element(id).disabled,true);
+  assert.equal(downloads.length,0);
+  if(beforeRender) {
+    assert.equal(element('scenario-buttons').children.length,0);
+    assert.equal(element('asset-chart').children.length,0);
+  }
+}
+if (invalidMode === 'numeric-mutations') {
+  let cases=0;
+  const paths=[
+    ...['p10','p50','p90','year'].map(key=>['annual_real_percentiles',0,key]),
+    ...['ordinary_tax','capital_gains_tax','adjusted_gross_income','taxable_social_security',
+        'standard_plus_age_deduction','enhanced_senior_deduction','ordinary_taxable',
+        'long_term_gain_taxable','niit_due','niit_tax_base'].map(key=>['deterministic_annual_ledger','rows',0,'tax',key]),
+    ...['wages_gross','social_security_gross','pension_gross','pretax_contributions',
+        'other_after_tax_income','investment_growth_total','living_expenses_due','living_expenses_paid',
+        'opening_total','closing_total','closing_total_real','rmd_total','roth_converted',
+        'tax_paid','unpaid_tax','unmet_spending','reconciliation_residual'].map(key=>['deterministic_annual_ledger','rows',0,key]),
+    ['deterministic_annual_ledger','rows',0,'payroll_tax','total'],
+    ['deterministic_annual_ledger','rows',0,'account_flows','cash','contribution'],
+    ['deterministic_annual_ledger','rows',0,'account_reconciliation_residuals','cash'],
+    ['deterministic_annual_ledger','rows',0,'tax','capital_gain_rate_lines',0,'taxable'],
+    ['deterministic_annual_ledger','rows',0,'tax','ordinary_bracket_lines',0,'rate'],
+  ];
+  for(const scenario of payload.results.keys()) for(const lastYear of [false,true]) {
+    for(const path of paths) for(const value of ['invalid',null,true]) {
+      const broken=JSON.parse(raw), parts=path.slice();
+      if(lastYear) parts[parts[0]==='annual_real_percentiles'?1:2]=broken.results[scenario].deterministic_annual_ledger.rows.length-1;
+      let target=broken.results[scenario];
+      for(const part of parts.slice(0,-1))target=target[part];
+      target[parts.at(-1)]=value;
+      try {assertRejected(JSON.stringify(broken),true);}
+      catch(error){error.message=`scenario ${scenario}, ${parts.join('.')}, ${JSON.stringify(value)}: ${error.message}`;throw error;}
+      cases++;
+    }
+  }
+  console.log(`PASS: ${cases} malformed numeric fields rejected before any scenario rendering`);
+  process.exit(0);
+}
+if (invalidMode === 'tax-method-text') {
+  for(const method of ['ordinary_rate_cap','stacked_capital_gains']) {
+    const changed=JSON.parse(raw);changed.results[0].deterministic_annual_ledger.rows[0].tax.income_tax_method=method;
+    const {element,context}=boot(JSON.stringify(changed));
+    assert.equal(context.window.__financialAudit.getActive(),0);
+    assert.equal(element('tax-details').children[1].textContent,
+      method==='ordinary_rate_cap'?'普通税率上限（较低税额）':'资本利得优惠税率叠加');
+  }
+  console.log('PASS: explicit text-valued tax method remains supported');
+  process.exit(0);
+}
+if (invalidMode) {
+  assertRejected(raw,true);
   console.log('PASS: invalid report hides conclusions and disables exports: '+invalidMode);
   process.exit(0);
 }
+const {element,context,downloads}=boot(raw);
 (async () => {
   for (let i = 0; i < payload.plans.length; i++) {
     element('scenario-buttons').children[i].click();

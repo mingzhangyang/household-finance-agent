@@ -82,14 +82,28 @@ async function main() {
     await context.close();
   }
   const context=await browser.newContext({offline:true}), page=await context.newPage();
-  for(const [name,raw] of [['invalid-json','{'],['empty',JSON.stringify({plans:[],results:[],verification:[],labels:[]})],['failed-verification',JSON.stringify({...payload,verification:payload.verification.map(v=>({...v,passed:false}))})]]) {
+  const invalidCases=[['invalid-json','{'],['empty',JSON.stringify({plans:[],results:[],verification:[],labels:[]})],['failed-verification',JSON.stringify({...payload,verification:payload.verification.map(v=>({...v,passed:false}))})]];
+  for(const scenario of payload.results.keys()) for(const laterYear of [false,true]) {
+    for(const target of ['chart','tax-detail']) {
+      const broken=JSON.parse(JSON.stringify(payload));
+      const result=broken.results[scenario], year=laterYear?result.deterministic_annual_ledger.rows.length-1:0;
+      if(target==='chart')result.annual_real_percentiles[year].p50='invalid';
+      else result.deterministic_annual_ledger.rows[year].tax.ordinary_tax='invalid';
+      invalidCases.push([`${target}-${scenario}-${year}`,JSON.stringify(broken)]);
+    }
+  }
+  for(const [name,raw] of invalidCases) {
     await record(`error state: ${name}`,async()=>{
       const broken=html.replace(/(<script id="data" type="application\/json">)[\s\S]*?(<\/script>)/,(_,start,end)=>start+raw+end);
       const file=path.join(output,`${name}.html`);await fs.writeFile(file,broken);
       await page.goto(pathToFileURL(file).href);
       assert.equal(await page.locator('#report-error').isVisible(),true);
       assert.equal(await page.locator('#report-content').isVisible(),false);
-      assert.equal(await page.locator('#download-plan').isDisabled(),true);
+      for(const id of ['download-plan','download-json','download-csv','print']) {
+        assert.equal(await page.locator('#'+id).isDisabled(),true);
+      }
+      assert.equal(await page.locator('#scenario-buttons button').count(),0);
+      assert.equal(await page.locator('#asset-chart path').count(),0);
     });
   }
   await context.close(); status.status='passed';
