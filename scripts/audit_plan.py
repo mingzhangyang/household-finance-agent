@@ -36,7 +36,8 @@ class ModelError(ValueError):
 
 
 def _num(v,label,lo=0,hi=1e15):
-    if isinstance(v,bool) or not isinstance(v,(float,int)) or not math.isfinite(v) or not lo<=v<=hi:
+    # Compare integers before converting to float (isfinite can overflow).
+    if isinstance(v,bool) or not isinstance(v,(float,int)) or not lo<=v<=hi or not math.isfinite(v):
         raise ModelError(f'{label} must be a finite number in [{lo},{hi}]')
     return float(v)
 
@@ -65,7 +66,7 @@ def validate(p):
         return _validate(p)
     except ModelError:
         raise
-    except (KeyError, TypeError, AttributeError, IndexError) as exc:
+    except (KeyError, TypeError, AttributeError, IndexError, OverflowError) as exc:
         raise ModelError('missing or malformed required plan data') from exc
 
 
@@ -79,7 +80,7 @@ def _validate(p):
     if not isinstance(p.get('name'),str) or not p['name'].strip():
         raise ModelError('nonempty name required')
     evidence=p.get('input_provenance')
-    if evidence is not None:
+    if 'input_provenance' in p:
         _allowed(evidence,['mode','register'],'input_provenance')
         if evidence.get('mode') not in ('fictional_demo','unverified_user_data','documented_verified'):
             raise ModelError('input_provenance.mode must be fictional_demo/unverified_user_data/documented_verified')
