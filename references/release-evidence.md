@@ -6,7 +6,7 @@ open. Never convert “not run”, skipped or environment-blocked checks to pass
 
 ## Collect evidence at an exact commit
 
-Use a clean Linux checkout with /proc, Python 3.10+ and Node.js. The collector has no user-input-file
+Use a clean POSIX checkout with process-group support, Python 3.10+ and Node.js. The collector has no user-input-file
 option: only the checked-in fictional household is used. Choose a **new** local
 folder outside the checkout, or under ignored `results/`:
 
@@ -24,9 +24,13 @@ for development, but `exact_clean_commit=false` prevents it being presented as
 commit-level evidence. `release_approved` is always false: engineering checks cannot
 supply missing scope decisions or independent professional sign-off.
 
-Commands run in isolated process groups. On timeout, the collector kills the whole
-group and waits until no live group members remain before closing logs or hashing
-artifacts. Exited zombies cannot write and do not block cleanup. If cleanup cannot
+Commands run in isolated process groups. On timeout, or when a normal/nonzero
+parent exit leaves live background descendants, the collector kills the whole
+group and waits until the process group disappears before closing logs or hashing
+artifacts. Any command requiring descendant cleanup is recorded as failed, even
+if its direct process exited zero. Process-group existence is checked through the OS signal API, avoiding PID
+namespace mismatches with mounted /proc. Unreaped zombies are treated
+conservatively and may cause cleanup to fail rather than publish uncertain hashes. If cleanup cannot
 be verified, collection aborts without publishing a manifest.
 
 Without `--browser`, the browser status is `not_run`. With the flag, missing Node,

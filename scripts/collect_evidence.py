@@ -27,19 +27,16 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def group_has_live_processes(pgid):
-    # Linux /proc distinguishes exited zombies (which cannot write) from live
-    # descendants. killpg(..., 0) alone can wait forever on orphan zombies.
-    if not Path('/proc/self/stat').exists():
-        raise RuntimeError('Cannot verify process-group cleanup without Linux /proc')
-    for stat in Path('/proc').glob('[0-9]*/stat'):
-        try:
-            fields = stat.read_text().rsplit(')', 1)[1].split()
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        if int(fields[2]) == pgid and fields[0] not in ('Z', 'X'):
-            return True
-    return False
+def group_exists(pgid):
+    # Use the same process namespace as Popen/killpg. A mounted /proc may
+    # expose different PID/group IDs inside containers or sandbox runtimes.
+    # Treat even an unreaped zombie conservatively: no manifest until the
+    # group disappears, rather than risk overlooking a live writer.
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    return True
 
 
 def stop_group(process):
@@ -49,7 +46,7 @@ def stop_group(process):
         pass
     process.wait()
     deadline = time.monotonic() + 5
-    while group_has_live_processes(process.pid):
+    while group_exists(process.pid):
         if time.monotonic() >= deadline:
             # Fail closed: never publish hashes if writers may still be alive.
             raise RuntimeError('Command descendants did not stop; evidence not collected')
@@ -65,7 +62,16 @@ def run_command(command, log, env, timeout=300):
             stream.write(str(exc)+'\n')
             return -1
         try:
-            return process.wait(timeout=timeout)
+            code = process.wait(timeout=timeout)
+            # A successful parent exit does not prove its background work is
+            # finished. Settle the entire group before logs/artifacts can be
+            # hashed, and never report a command needing cleanup as passed.
+            if group_exists(process.pid):
+                stop_group(process)
+                stream.write(f'Command exited {code} with live background descendants; '
+                             'process group stopped; command failed.\n')
+                return -1
+            return code
         except subprocess.TimeoutExpired as exc:
             stop_group(process)
             stream.write(str(exc)+'\n')
