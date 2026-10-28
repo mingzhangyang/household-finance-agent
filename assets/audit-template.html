@@ -17,7 +17,7 @@
 <nav aria-label="报告章节"><a href="#snapshot">01 概览 Snapshot</a><a href="#retirement">02 退休预测</a><a href="#scenarios">03 方案对照</a><a href="#cashflow">04 年度现金流</a><a href="#year-detail">05 可追溯账本</a><a href="#sources">06 规则与限制</a></nav>
 <div class="sidefoot">所有财务数据保存在此 HTML 内，浏览器打开即读取。不要公开上传真实家庭报告。</div></aside>
 <main class="main"><header class="topline"><div><div class="eyebrow">HOUSEHOLD FINANCIAL PLAN · AUDITABLE</div><h1>家庭退休与现金流报告</h1><p class="lede">逐年可复算 · 规则可追溯 · 情景预计算 · 不把模型假设当成未来事实</p></div>
-<div class="actionrow"><button class="btn" id="download-json">导出审计 JSON</button><button class="btn" id="download-csv">导出逐年 CSV</button><button class="btn primary" id="print">打印 / PDF</button></div></header>
+<div class="actionrow"><button class="btn" id="download-json">导出审计 JSON</button><button class="btn" id="download-plan">导出方案 JSON</button><button class="btn" id="download-csv">导出逐年 CSV</button><button class="btn primary" id="print">打印 / PDF</button></div></header>
 <div class="warnings" role="note"><div class="warn-title">重要限定：这是受限模型，不是完整税务或投资建议</div>
 2026 联邦税法作为参考基线，之后年份的税阶按假设指数调整；不计算州税、NIIT 尚未覆盖的投资收入和扣除调整、税收抵免、IRMAA、死亡/遗属、SSA 福利公式等。模拟结果不等于真实退休成功概率。</div>
 <section id="snapshot"><div class="panelheader"><div><h2>财务概览 <span class="small">/ Snapshot</span></h2><div class="subtitle">使用已由 Python 计算并经资金流对账的方案，不在浏览器重新实现税法。</div></div></div><div class="scenarios" id="scenario-buttons" role="group" aria-label="切换财务方案"></div>
@@ -67,7 +67,7 @@ function renderChart(r){const svg=$('asset-chart');svg.replaceChildren();
  }
 function renderDetail(year){selectedYear=year;const r=get(),row=r.deterministic_annual_ledger.rows.find(q=>q.year===year);if(!row)return;
  text('year-heading',`${year} 年度逐项审计`);
- const okay=row.unmet_spending<.01&&row.unpaid_tax<.01&&row.unmet_rmd<.01&&row.reconciliation_residual===0;
+ const okay=row.unmet_spending<.01&&row.unpaid_tax<.01&&row.unmet_rmd<.01&&row.skipped_conversions.length===0&&row.reconciliation_residual===0;
  text('year-status',okay?'对账通过':'出现资金/规则缺口');$('year-status').className=okay?'pill':'pill warn';
  const details=[['期初全部账户',row.opening_total],['工资总额',row.wages_gross],['其中税前401(k)缴款（内部划转）',row.pretax_contributions],['社保金总额',row.social_security_gross],['退休金总额',row.pension_gross],['其他净收入',row.other_after_tax_income],['投资及现金收益',row.investment_growth_total],['应付生活开销',row.living_expenses_due],['实际生活支出',row.living_expenses_paid],['RMD（IRA/401k 转现金）',row.rmd_total],['Roth 转换（内部划转）',row.roth_converted],['已付联邦及工资税',row.tax_paid],['未支付税款',row.unpaid_tax],['未满足支出',row.unmet_spending],['期末全部账户',row.closing_total]];
  const inc=$('income-details');inc.replaceChildren();details.forEach(([name,num])=>inc.append(...numeric(name,num)));
@@ -103,7 +103,8 @@ function render(){const r=get(),yr=r.deterministic_annual_ledger.rows;
  text('input-quality','期初余额口径: '+r.opening_balance_status+' · 输入来源状态: '+r.input_provenance.mode+' · 登记证据 '+r.input_provenance.register.length+' 条（并不等于原始文件已独立核查）');
  text('input-hash','输入 SHA256: '+r.input_sha256);text('engine-hash','计算代码 SHA256: '+r.engine_source_sha256);
  }
-$('download-json').onclick=()=>save('financial-audit.json',JSON.stringify(data.results[active],null,2),'application/json');
+$('download-json').onclick=()=>save('financial-audit.json',JSON.stringify({plan:data.plans[active],result:get(),verification:data.verification[active]},null,2),'application/json');
+$('download-plan').onclick=()=>save('financial-plan.json',JSON.stringify(data.plans[active],null,2),'application/json');
 $('download-csv').onclick=()=>{const rows=get().deterministic_annual_ledger.rows;const fields=['year','opening_total','investment_growth_total','wages_gross','pretax_contributions','social_security_gross','pension_gross','living_expenses_paid','tax_due_total','tax_paid','unpaid_tax','closing_total','reconciliation_residual'];save('financial-audit-ledger.csv',fields.join(',')+'\n'+rows.map(r=>fields.map(k=>r[k]).join(',')).join('\n')+'\n','text/csv')};
 $('print').onclick=()=>window.print();
 render();window.__financialAudit={getActive:()=>active,getYear:()=>selectedYear,getReport:()=>get()};

@@ -20,8 +20,8 @@ def create_scenarios(base):
     expensive['living_expenses_annual_real'] *= 1.10
     conservative = copy.deepcopy(base)
     conservative['name'] = 'Lower return assumptions'
-    conservative['assumptions']['equity_mean'] -= 0.02
-    conservative['assumptions']['bond_mean'] -= 0.01
+    conservative['assumptions']['equity_mean'] = max(-.5,base['assumptions']['equity_mean']-.02)
+    conservative['assumptions']['bond_mean'] = max(-.5,base['assumptions']['bond_mean']-.01)
     return [base, early, expensive, conservative]
 
 def render(base,output):
@@ -31,7 +31,7 @@ def render(base,output):
     if not all(status['passed'] for status in verification):
         raise VerifyFailure('independent pre-render verification failed')
     data={'labels':['当前基准','提前退休三年','家庭支出增加 10%','降低收益预期'],
-          'results':results,'verification':verification,
+          'plans':plans,'results':results,'verification':verification,
           'source':'All numbers precomputed by audit_plan.py and checked by verify_outputs.py; no browser tax calculations'}
     raw=json.dumps(data,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     raw=raw.replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')

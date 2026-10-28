@@ -284,7 +284,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
         for m in p['members']:
             age=year-m['birth_year']
             wages=m['annual_wages_2026']*(1+m['wage_growth'])**n if age < m['retirement_age'] else 0.
-            contrib=m['annual_pretax_401k_2026_real']*factor if wages else 0.
+            contrib=m.get('annual_pretax_401k_2026_real',0)*factor if wages else 0.
             max_limit=CONTRIB_401K_LIMIT*(1+p['tax_policy']['future_bracket_inflation'])**(year-2026)
             # Catch-up limits are NOT modeled; fail closed when above base elective limit.
             if contrib>min(wages,max_limit)+1e-7:

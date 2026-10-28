@@ -19,6 +19,8 @@ python -m unittest discover -s tests -v
 
 Open `financial_audit_dashboard.html` locally in a browser. The tool can switch between four **Python-precomputed** scenarios, drill down by year into federal tax brackets and all account transfers, inspect Monte Carlo paths, and export annual cash flow CSV or audited JSON. The report is offline and contains its underlying private data in plaintext: **do not publish a real family's file**.
 
+Each scenario's exact plan (including seed and return assumptions) is embedded in the report. **导出方案 JSON** downloads the selected plan as `financial-plan.json`, ready for `audit_plan.py run` or `trace`. **导出审计 JSON** downloads a bundle with `plan`, `result`, and `verification`; extract its `result` object when using the output verifier CLI. The lower-return comparison floors each adjusted mean at the supported -50% boundary; its exported plan records the actual assumptions used.
+
 ## What v2.2 improves
 
 - Validate monetary types, dates, account ownership, contribution limits, IRA before-tax basis, selected RMD treatment, and SSA benefit assumptions; reject unsupported scenarios instead of inventing behavior.
@@ -26,7 +28,7 @@ Open `financial_audit_dashboard.html` locally in a browser. The tool can switch 
 - Model cash/retirement-account transfers separately from external spending and tax flows; write double-entry conservation journal, tax-bracket breakdown and per-account residual per year.
 - Use seeded two-asset correlated Gaussian Monte Carlo (unvalidated returns) with a path manifest, deterministic replay, Wilson sampling interval and code/input SHA256 identifiers.
 - NIIT 3.8% is included in annual cash-funding and taxable dispositions, with modeled NII limited to bank interest and positive long-term realized gains. The verifier independently checks its income base and rate. The IRS $250k joint / $200k single MAGI thresholds are not inflated.
-- The 2026 extra senior deduction for joint filers is reduced by 6% of household MAGI over $150k once, not per qualified spouse.
+- The 2026 extra senior deduction phases out each eligible person’s $6,000 by 6% of joint MAGI over $150k before summing: two eligible spouses receive $10,800 at $160k MAGI and $0 at $250k.
 - `verify_outputs.py` is a separately implemented output-only verifier; it recomputes arithmetic from JSON without importing the main engine. Tampering tests intentionally change results to confirm detection.
 
 ## Limits and status

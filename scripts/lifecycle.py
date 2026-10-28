@@ -39,7 +39,11 @@ def timeline(members,start_year,end_year,*,annual_spending,
         for k in ("annual_wages","annual_pension","annual_social_security"):
             money(m.get(k),k)
     first_death=min(m["death_year"] for m in members)
-    may_survive_one=len(members)==2 and first_death<end_year
+    last_death=max(m["death_year"] for m in members)
+    # Deaths take effect at year end: one survivor exists only during
+    # [first_death + 1, last_death], intersected with the modeled interval.
+    may_survive_one=(len(members)==2 and
+                     max(start_year,first_death+1)<=min(end_year,last_death))
     if may_survive_one:
         if survivor_spending_fraction is None or survivor_total_ss_annual is None:
             raise LifecycleError("post-death spending fraction and TOTAL survivor-household SS must be supplied")

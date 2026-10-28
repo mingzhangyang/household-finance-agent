@@ -76,4 +76,96 @@ class AnnualLedgerContract(unittest.TestCase):
         self.assertEqual(a['simulated_path_manifest'],b['simulated_path_manifest'])
         self.assertEqual(a['success_paths'],b['success_paths'])
 
+    def test_omitted_401k_contributions_equal_explicit_zero(self):
+        p=short()
+        for member in p['members']:
+            member.pop('annual_pretax_401k_2026_real')
+            member.pop('pretax_401k_target')
+        explicit=copy.deepcopy(p)
+        for member in explicit['members']:
+            member['annual_pretax_401k_2026_real']=0
+        result=audit_plan.evaluate(p)
+        self.assertEqual(result['deterministic_annual_ledger'],
+                         audit_plan.evaluate(explicit)['deterministic_annual_ledger'])
+        self.assertTrue(verify(result,p)['passed'])
+        for row in result['deterministic_annual_ledger']['rows']:
+            self.assertGreater(row['wages_gross'],0)
+            self.assertEqual(row['pretax_contributions'],0)
+
+
+class OutputContinuity(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.plan=short()
+        cls.result=audit_plan.evaluate(cls.plan)
+
+    def test_reordered_duplicate_and_gapped_years_rejected(self):
+        for change in ('reorder','duplicate','gap','shift'):
+            for supplied_plan in (self.plan,None):
+                with self.subTest(change=change,with_plan=supplied_plan is not None):
+                    result=copy.deepcopy(self.result)
+                    rows=result['deterministic_annual_ledger']['rows']
+                    if change=='reorder': rows.reverse()
+                    elif change=='duplicate': rows[1]['year']=rows[0]['year']
+                    elif change=='gap': rows[1]['year']+=1
+                    else:
+                        for row in rows: row['year']+=1
+                    with self.assertRaises(VerifyFailure): verify(result,supplied_plan)
+
+    def test_fabricated_balance_between_years_rejected(self):
+        result=copy.deepcopy(self.result)
+        # Keep every year's journal and conservation equation balanced while
+        # introducing $1,000 between the first and second year's ledgers.
+        for row in result['deterministic_annual_ledger']['rows'][1:]:
+            for phase in ('opening','closing'):
+                row[phase+'_accounts']['cash']+=1000
+                row[phase+'_total']+=1000
+        for supplied_plan in (self.plan,None):
+            with self.assertRaisesRegex(VerifyFailure,'continuity'):
+                verify(result,supplied_plan)
+
+    def test_first_year_anchored_to_plan(self):
+        result=copy.deepcopy(self.result)
+        for row in result['deterministic_annual_ledger']['rows']:
+            for phase in ('opening','closing'):
+                row[phase+'_accounts']['cash']+=1000
+                row[phase+'_total']+=1000
+        # An output-only verifier cannot know the true initial balances.
+        self.assertTrue(verify(result)['passed'])
+        with self.assertRaisesRegex(VerifyFailure,'continuity'): verify(result,self.plan)
+
+    def test_totals_must_equal_accounts(self):
+        result=copy.deepcopy(self.result)
+        for row in result['deterministic_annual_ledger']['rows']:
+            row['opening_total']+=1000
+            row['closing_total']+=1000
+        with self.assertRaisesRegex(VerifyFailure,'account sum'): verify(result)
+
+    def test_missing_account_journal_rejected(self):
+        result=copy.deepcopy(self.result)
+        result['deterministic_annual_ledger']['rows'][0]['account_flows'].pop('cash')
+        with self.assertRaisesRegex(VerifyFailure,'account IDs'): verify(result,self.plan)
+
+    def test_plan_year_range_anchor(self):
+        result=copy.deepcopy(self.result)
+        result['year_range']=[2028,2031]
+        for row in result['deterministic_annual_ledger']['rows']: row['year']+=1
+        with self.assertRaisesRegex(VerifyFailure,'year range'): verify(result,self.plan)
+
+    def test_tax_bracket_multiplication(self):
+        p=short()
+        p['living_expenses_annual_real']=500000
+        p['accounts'][0]['balance']=0
+        p['accounts'][1].update(balance=1000000,basis=0)
+        result=audit_plan.evaluate(p)
+        self.assertTrue(verify(result,p)['passed'])
+        for field in ('ordinary_bracket_lines','capital_gain_rate_lines'):
+            for key in ('rate','taxable'):
+                with self.subTest(field=field,key=key):
+                    altered=copy.deepcopy(result)
+                    lines=altered['deterministic_annual_ledger']['rows'][0]['tax'][field]
+                    line=next(line for line in lines if line['tax']>0)
+                    line[key]+=.01 if key=='rate' else 100
+                    with self.assertRaisesRegex(VerifyFailure,'multiplication'): verify(altered,p)
+
 if __name__=='__main__':unittest.main()

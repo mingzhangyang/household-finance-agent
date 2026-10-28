@@ -46,12 +46,42 @@ def verify(x,plan=None,engine_dir=None):
     max_residual=0
     if not ledger:
         raise VerifyFailure('empty ledger')
-    for row in ledger:
+    first_year,last_year=x['year_range']
+    if plan is not None:
+        if [first_year,last_year]!=[plan['as_of_year']+1,plan['end_year']]:
+            raise VerifyFailure('year range mismatched to plan')
+        previous_accounts={a['id']:a['balance'] for a in plan['accounts']}
+        previous_total=sum(previous_accounts.values())
+    else:
+        previous_accounts=ledger[0]['opening_accounts']
+        previous_total=ledger[0]['opening_total']
+    if len(ledger)!=last_year-first_year+1:
+        raise VerifyFailure('year count mismatched to range')
+    for index,row in enumerate(ledger):
         y=row['year']
+        if y!=first_year+index:
+            raise VerifyFailure('ledger years must be consecutive and ordered')
+        for field in ('opening_accounts','closing_accounts','growth_by_account',
+                      'account_flows','account_reconciliation_residuals'):
+            if set(row[field])!=set(previous_accounts):
+                raise VerifyFailure(f'{y}: {field} account IDs changed')
+        for aid,balance in previous_accounts.items():
+            close(row['opening_accounts'][aid],balance,f'{y}: opening continuity {aid}',.01)
+        close(row['opening_total'],previous_total,f'{y}: opening total continuity',.01)
+        # Each account and its independently rounded total can differ by half
+        # a cent per account; do not let that hide material missing balances.
+        total_tol=max(.01,.005*(len(previous_accounts)+1)+1e-8)
+        close(row['opening_total'],sum(row['opening_accounts'].values()),f'{y}: opening account sum',total_tol)
+        close(row['closing_total'],sum(row['closing_accounts'].values()),f'{y}: closing account sum',total_tol)
+        checks+=9+len(previous_accounts)
         external=row['wages_gross']+row['social_security_gross']+row['pension_gross']+row['other_after_tax_income']
         expected=row['opening_total']+row['investment_growth_total']+external-row['living_expenses_paid']-row['tax_paid']
         close(row['closing_total'],expected,f'{y}: whole-household conservation')
         close(row['reconciliation_residual'],0,f'{y}: output residual',.01)
+        for field in ('ordinary_bracket_lines','capital_gain_rate_lines'):
+            for band,line in enumerate(row['tax'][field]):
+                close(line['tax'],line['taxable']*line['rate'],f'{y}: {field} {band} multiplication',.01)
+                checks+=1
         close(row['tax']['ordinary_tax'],sum(z['tax'] for z in row['tax']['ordinary_bracket_lines']),f'{y}: ordinary brackets')
         close(row['tax']['capital_gains_tax'],sum(z['tax'] for z in row['tax']['capital_gain_rate_lines']),f'{y}: gains brackets')
         close(row['tax']['federal_income_tax'],row['tax']['ordinary_tax']+row['tax']['capital_gains_tax'],f'{y}: federal tax')
@@ -82,9 +112,11 @@ def verify(x,plan=None,engine_dir=None):
                 -flows['optional_draw']-flows['cash_tax_and_spending_outflow'])
             close(row['closing_accounts'][aid],expected,f'{y}: account {aid}')
             close(row['account_reconciliation_residuals'][aid],0,f'{y}: {aid} residual',.01)
-            checks+=1
+            checks+=2
             max_residual=max(max_residual,abs(row['closing_accounts'][aid]-expected))
-        checks+=10+len(row['rmd'])*2
+        checks+=17+len(row['rmd'])*2
+        previous_accounts=row['closing_accounts']
+        previous_total=row['closing_total']
     if plan is not None:
         raw=json.dumps(plan,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
         if x['input_sha256']!=hashlib.sha256(raw).hexdigest():
