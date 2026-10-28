@@ -1,0 +1,26 @@
+# Rules, constants and primary-source provenance
+
+**Snapshot date: 2026-10-27.** This is an implementation's scoped rule register, not a complete explanation of US tax law. Read the current IRS/SSA pages for any actual transaction.
+
+| Rule ID | 2026 coefficient / applied algorithm | Official primary source | Status |
+|---|---|---|---|
+| `brackets_standard_senior` | Single progressive breakpoints $12,400 / $50,400 / $105,700 / $201,775 / $256,225 / $640,600; joint $24,800 / $100,800 / $211,400 / $403,550 / $512,450 / $768,700; standard deduction $16,100 single, $32,200 MFJ; standard extra 65+ $2,050 single/$1,650 each eligible spouse | [IRS Rev Proc 2025-32, IRB 2025-45](https://www.irs.gov/irb/2025-45_IRB) | Verified as 2026 reference |
+| `capital_gains` | Single 0% to taxable income $49,450, 20% threshold $545,500; MFJ $98,900 / $613,700; tax stacking with ordinary taxable income | [IRS IRB 2025-45](https://www.irs.gov/irb/2025-45_IRB) | Verified 2026; no NIIT |
+| `social_security_tax` | Standard simplified provisional-income method: taxable portion 0–85%; single $25k/$34k, MFJ $32k/$44k; upper tier plateau $4,500/$6,000 | [IRS Publication 915](https://www.irs.gov/publications/p915) | Tested against published Example 3; exemptions/complex worksheets unsupported |
+| `senior_enhanced` | 2025–2028 additional deduction up to $6,000 per person 65+, 6% phase-out over modified AGI $75,000 single / $150,000 MFJ | [IRS Working Families changes](https://www.irs.gov/newsroom/working-families-tax-cuts-individuals-and-workers) | Restricted approximation; MAGI nuances not covered |
+| `payroll` | Employee Social Security rate 6.2% up to $184,500 2026, Medicare 1.45% all wages | [SSA 2026 COLA](https://www.ssa.gov/cola/factsheets/2026.html) | Verified 2026 reference |
+| `payroll_2027` | Actual SSA-published OASDI wage cap **$192,300** in 2027, 6.2% tax | [SSA 2027 COLA](https://www.ssa.gov/cola/factsheets/2027.html) | **Published 2027 exception** to otherwise projected law |
+| `additional_medicare` | 0.9% employee Medicare above $200,000 single / $250,000 MFJ | [IRS Tax Topic 560](https://www.irs.gov/taxtopics/tc560) | Household-level approximation; employer withholding timing excluded |
+| `401k_elective_limit_2026` | Standard employee elective deferral **$24,500**; no age-50 catch-up used in model | [IRS 401(k) limit resource](https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-401k-and-profit-sharing-plan-contribution-limits) | **Later years use an assumed indexed limit** |
+| `rmd_uniform_lifetime` | Uniform Lifetime Table: age 73 divisor 26.5, age 74 25.5, age 75 24.6 etc.; prior December 31 balance / divisor | [IRS Publication 590-B](https://www.irs.gov/publications/p590b) | Only original owner, applicable uniform table, fully pretax retirement holdings |
+| `rmd_birth_1959` | Birth 1951–1959: RMD starting age 73; born >=1960: age 75; 1959 cohort has historically ambiguous SECURE 2.0 wording | [IRS 2024 proposed rules](https://www.irs.gov/irb/2024-33_IRB); [2025 CRS analysis](https://www.congress.gov/crs_external_products/RL/PDF/RL34397/RL34397.37.pdf) | Flag 1959 for human review when material |
+
+## Hypothetical projection logic — not law
+
+The model's nominal 2026 reference-year federal brackets and standard deduction are multiplied in later years by `(1+future_bracket_inflation)^(year-2026)`. This is a **user assumption**, not a prediction of enacted IRS guidance. SSA provisional-income thresholds are *not* inflated. For 2028+ payroll OASDI wage cap, assume 2027 official cap compounded by assumed growth. Every future-year result must be labeled as **projected federal tax estimate**, never as a real 2027+ tax return.
+
+Salary deferrals are exempt from modeled ordinary federal income tax but NOT Social Security/Medicare payroll tax. Traditional IRA/401(k) RMDs and additional withdrawals are modeled as ordinary income. The Roth conversion is from fully pretax IRA to qualified Roth IRA belonging to the same person; no tax-free nondeductible IRA basis. IRS distributions, penalties and early RMD deferrals outside these cases are **not supported**.
+
+## Explicitly excluded from scope
+
+State/local tax, AMT, NIIT, capital loss carryovers, taxable dividends, employer match, qualified charitable distributions, pension benefit formulas, itemized deductions, most tax credits, substantial AGI/MAGI exceptions, Medicare IRMAA and health subsidies, filing-status changes, inheritance and survivor rules, Roth five-year test, 401k still-working exceptions, SSA earnings test and actuarial longevity. Such a user case must be escalated to expert judgment or the model expanded and independently verified **before** calculation.
