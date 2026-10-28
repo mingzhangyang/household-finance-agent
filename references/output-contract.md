@@ -91,3 +91,5 @@ Any new report field must receive a unit, source, rounding rule and verification
 path or explicit limitation here before it is presented as a validated metric.
 
 Replay output contains passed, validation_level=same_engine_replay, independent_model_validation=false and paths_replayed. It certifies reproducibility of all exported fields against the same local engine, not independent model correctness.
+
+Present output provenance is validated even without `--plan`: supported mode, register list, entry fields, source/confidence enums and valid dates. `not_provided` requires an empty register. This is metadata syntax checking, not document authentication or proof that pointers resolve; comparison with supplied input remains a separate check. Legacy results with neither provenance nor evidence status remain supported.
