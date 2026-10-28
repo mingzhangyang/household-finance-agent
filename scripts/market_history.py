@@ -71,7 +71,7 @@ def rolling_backtest(snapshot,*,years,initial_balance,annual_spending,equity_wei
     rows=snapshot["rows"]
     if not isinstance(years,int) or not 1<=years<=len(rows):
         raise MarketDataError("horizon must be within available observations")
-    if not math.isfinite(initial_balance) or initial_balance<0 or annual_spending<0:
+    if not math.isfinite(initial_balance) or not math.isfinite(annual_spending) or initial_balance<0 or annual_spending<0:
         raise MarketDataError("invalid balance or annual spending")
     if not 0<=spending_inflation<=.2:
         raise MarketDataError("invalid spending inflation")
