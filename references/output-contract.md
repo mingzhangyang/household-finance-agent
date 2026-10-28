@@ -67,7 +67,7 @@ The M1 verification matrix further records gaps and mutation evidence.
 | Y.reconciliation_residual,account_reconciliation_residuals[A] | USD, closing minus reconstructed closing | $0.01 residual gate; exported rounded-account reconstruction generally $0.05 |
 | Y.account_flows[A].contribution,required_distribution,roth_conversion_out,roth_conversion_in,optional_draw,cash_external_inflow,cash_tax_and_spending_outflow,cash_received_rmd,cash_received_draws | USD nominal positive flow magnitudes | Per-account conservation, conversion cross-check; not every individual flow independently sourced |
 | Y.cash_account_id,source_ids | Input account / rule-source identifiers | Schema and traceability; not independent source certification |
-| verification.passed,annual_rows,mc_paths,assertions_checked,max_account_residual_dollars,verified_input_hash,verified_engine_hash | Boolean, counts, USD residual, booleans | Verifier diagnostics; assertion count is not coverage or accuracy |
+| verification.passed,annual_rows,mc_paths,assertions_checked,max_account_residual_dollars,verified_input_hash,verified_engine_hash,validation_level,limitations | Boolean, counts, USD residual, booleans | Verifier diagnostics; assertion count is not coverage or accuracy |
 | trace.engine_version,trial_index,input_sha256,annual_returns,path_ledger | Same version/input identity; decimal returns; L-shaped ledger | Seed/path-index replay; identical engine, not independent reference |
 
 ## UI-derived numbers and aliases
@@ -89,3 +89,5 @@ The M1 verification matrix further records gaps and mutation evidence.
 
 Any new report field must receive a unit, source, rounding rule and verification
 path or explicit limitation here before it is presented as a validated metric.
+
+Replay output contains passed, validation_level=same_engine_replay, independent_model_validation=false and paths_replayed. It certifies reproducibility of all exported fields against the same local engine, not independent model correctness.

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "review_status": "engineering_reference_not_professionally_reviewed",
+  "retrieved_on": "2026-10-28",
+  "sources": {
+    "rates": {"url": "https://www.irs.gov/irb/2025-45_IRB", "locator": "Rev. Proc. 2025-32 section 4.01 Tables 1 and 3, 4.03 capital gains, 4.14 standard deduction", "rule_year": 2026},
+    "ss": {"url": "https://www.irs.gov/publications/p915", "locator": "2025 edition, Examples, Example 1 / filled Worksheet 1", "rule_year": 2025},
+    "rmd": {"url": "https://www.irs.gov/publications/p590b", "locator": "2025 edition, Appendix B Table III, ages 73 and 74", "rule_year": 2025}
+  },
+  "component_cases": [
+    {"id":"single-zero", "kind":"progressive", "source":"rates", "inputs":{"income":0,"status":"single"}, "expected":0, "tolerance":0.000001, "derivation":"0 times 10%"},
+    {"id":"single-boundary-below", "kind":"progressive", "source":"rates", "inputs":{"income":12399.99,"status":"single"}, "expected":1239.999, "tolerance":0.000001, "derivation":"12399.99 times 10%; no premature whole-dollar rounding"},
+    {"id":"single-boundary", "kind":"progressive", "source":"rates", "inputs":{"income":12400,"status":"single"}, "expected":1240, "tolerance":0.000001, "derivation":"12400 times 10%"},
+    {"id":"single-boundary-above", "kind":"progressive", "source":"rates", "inputs":{"income":12400.01,"status":"single"}, "expected":1240.0012, "tolerance":0.000001, "derivation":"1240 + 0.01 times 12%"},
+    {"id":"single-third-bracket", "kind":"progressive", "source":"rates", "inputs":{"income":50401,"status":"single"}, "expected":5800.22, "tolerance":0.000001, "derivation":"5800 + 1 times 22%"},
+    {"id":"joint-boundary", "kind":"progressive", "source":"rates", "inputs":{"income":100800,"status":"mfj"}, "expected":11600, "tolerance":0.000001, "derivation":"2480 + (100800 - 24800) times 12%"},
+    {"id":"ss-official-example-1", "kind":"ss", "source":"ss", "inputs":{"benefits":5980,"other_income":28990,"status":"single"}, "expected":2990, "tolerance":0.005, "derivation":"Official Worksheet 1 result; benefits only, no claim about 2025 total income tax"},
+    {"id":"ss-base-boundary", "kind":"ss", "source":"ss", "inputs":{"benefits":10000,"other_income":20000,"status":"single"}, "expected":0, "tolerance":0.005, "derivation":"20000 + half of 10000 = 25000; no taxable benefit"},
+    {"id":"ss-85-percent-cap", "kind":"ss", "source":"ss", "inputs":{"benefits":10000,"other_income":100000,"status":"single"}, "expected":8500, "tolerance":0.005, "derivation":"85% cap applies; no exclusions or special worksheets"}
+  ],
+  "projection_cases": [
+    {"id":"cash-exhaustion", "source":"rates", "years":2, "birth_year":1967, "cash":30000, "ira":0, "taxable":0, "basis":0, "conversion":0, "spending":20000,
+     "expected_rows":[{"closing_total":10000,"tax_due_total":0,"unmet_spending":0},{"closing_total":0,"tax_due_total":0,"unmet_spending":10000}], "first_failure_year":2028,
+     "derivation":"No income/return/tax: 30000 - 20000 = 10000, then only 10000 of 20000 paid."},
+    {"id":"conversion-ira-tax-gross-up", "source":"rates", "years":2, "birth_year":1967, "cash":0, "ira":100000, "taxable":0, "basis":0, "conversion":20000, "spending":20000,
+     "expected_rows":[{"closing_total":77022.73,"ira_extra_taxable":22977.27,"tax_due_total":2977.27,"roth_converted":20000},{"closing_total":56589.39,"ira_extra_taxable":20433.33,"tax_due_total":433.33,"roth_converted":0}], "first_failure_year":null,
+     "derivation":"Year1 D=20000+1240+0.12*(20000+D-16100-12400), so D=20220/0.88. IRA=80000-D; Roth=20000. Year2 D=20000+0.10*(D-16100)=18390/0.90. No senior deduction, income, growth or RMD."},
+    {"id":"conversion-ltcg-tax-gross-up", "source":"rates", "years":1, "birth_year":1967, "cash":100000, "ira":100000, "taxable":100000, "basis":50000, "conversion":40000, "spending":160000,
+     "expected_rows":[{"closing_total":136445.95,"realized_ltcg":31777.03,"tax_due_total":3554.05,"roth_converted":40000}], "first_failure_year":null,
+     "derivation":"Ordinary taxable=40000-16100=23900; ordinary tax=2620. Zero-rate LTCG room=49450-23900=25550. Draw D solves D=60000+2620+0.15*(0.5D-25550), hence D=58787.5/0.925. Gain=D/2; NIIT=0. Closing=300000-160000-tax."},
+    {"id":"rmd-two-year-continuity", "source":"rmd", "years":2, "birth_year":1954, "cash":0, "ira":265000, "taxable":0, "basis":0, "conversion":0, "spending":0,
+     "expected_rows":[{"closing_total":265000,"rmd_total":10000,"tax_due_total":0},{"closing_total":265000,"rmd_total":10000,"tax_due_total":0}], "first_failure_year":null,
+     "derivation":"Age73: 265000/26.5=10000; next opening IRA=255000. Age74: 255000/25.5=10000. Cash=10000 then 20000. Income below standard deduction; transfers preserve total."}
+  ],
+  "projection_conventions": {
+    "rule_year":2026,
+    "projection_start":2027,
+    "future_policy":"explicitly hypothetical frozen 2026 schedule; NOT enacted 2027/2028 law",
+    "rounding":"unrounded calculations, then cents at output; absolute tolerance 0.01 USD; failure year exact",
+    "assumptions":"single, retired, no Social Security/pension/wages, zero inflation and returns; qualified Roth; fully pretax IRA; cash then taxable then IRA then Roth; conversion only in first year",
+    "expected_origin":"hand-derived equations recorded before engine comparison; not copied engine output"
+  }
+}
