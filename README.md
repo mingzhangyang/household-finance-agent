@@ -12,6 +12,12 @@ and separate report labels for accounting, input evidence, model scope and revie
 The default remains offline federal-only research. Scope-owner/professional sign-off
 is pending; passing arithmetic does not approve real household use.
 
+M1 engineering adds [sourced golden cases](tests/golden/reference-cases.json),
+closed-form Decimal withdrawal cross-checks and a [verification matrix](references/verification-matrix.md).
+`verify_outputs.py` checks selected independent arithmetic; `verify_replay.py result.json
+--plan plan.json` checks exact same-engine reproducibility, including intermediate
+annual percentiles. Neither is full independent model validation.
+
 ## Canonical offline verification (free, no Actions quota)
 
 Run `sh scripts/verify_local.sh` from the repo. It checks syntax, all tracked Python tests, the 40-year fictional projection, 300 market paths, independent output verification, the historical return fixture and offline HTML generation. This does **not** mean external tax/SSA certification or complete model calibration. GitHub Actions may be unavailable because the owner's quota is exhausted; do not repeatedly retry billing-blocked jobs. Keep the PR in Draft until exact-head review is complete.

@@ -10,6 +10,7 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 "$PYTHON" scripts/audit_plan.py validate examples/audited-household-2026.json
 "$PYTHON" scripts/audit_plan.py run examples/audited-household-2026.json --output "$TMP/result.json"
 "$PYTHON" scripts/verify_outputs.py "$TMP/result.json" --plan examples/audited-household-2026.json --engine-dir scripts --output "$TMP/verification.json"
+"$PYTHON" scripts/verify_replay.py "$TMP/result.json" --plan examples/audited-household-2026.json --output "$TMP/replay.json"
 "$PYTHON" scripts/market_history.py examples/nyu_2000_2018_partial.csv --horizon 10 --output "$TMP/market.json"
 "$PYTHON" scripts/render_audit.py examples/audited-household-2026.json --output "$TMP/report.html"
 test -s "$TMP/report.html"

@@ -8,6 +8,7 @@ Arithmetic consistency is not a tax-law certification or market calibration.
 import argparse
 import hashlib
 import json
+from datetime import date
 from math import isfinite, sqrt
 from pathlib import Path
 
@@ -15,7 +16,8 @@ class VerifyFailure(ValueError):
     pass
 
 def close(a,b,desc,tol=.05):
-    if not abs(float(a)-float(b))<=tol:
+    if (type(a) not in (int,float) or type(b) not in (int,float)
+            or not isfinite(a) or not isfinite(b) or not abs(a-b)<=tol):
         raise VerifyFailure(f'{desc}: got {a} expected {b} (tol {tol})')
 
 def quant(vals,q):
@@ -31,8 +33,81 @@ def numeric_vector(value,length,description):
         raise VerifyFailure(f'{description}: expected {length} finite numeric entries')
 
 def verify(x,plan=None,engine_dir=None):
+    """Public gate: malformed outputs are failures, never uncaught schema errors."""
+    try:
+        if not isinstance(x,dict):
+            raise VerifyFailure('result must be an object')
+        return _verify(x,plan,engine_dir)
+    except VerifyFailure:
+        raise
+    except (KeyError,TypeError,AttributeError,IndexError,ZeroDivisionError,ValueError,OverflowError) as exc:
+        raise VerifyFailure(f'malformed output: {exc}') from exc
+
+
+def verify_provenance(provenance):
+    """Check output metadata independently, even when no input plan is supplied.
+
+    This checks register syntax, not source documents or pointer resolution.
+    A supplied plan is still needed to compare the actual provenance values.
+    """
+    if not isinstance(provenance,dict) or set(provenance)!={'mode','register'}:
+        raise VerifyFailure('input_provenance must contain mode and register')
+    mode=provenance['mode']
+    if mode not in ('not_provided','fictional_demo','unverified_user_data','documented_verified'):
+        raise VerifyFailure('unsupported input_provenance mode')
+    register=provenance['register']
+    if not isinstance(register,list):
+        raise VerifyFailure('input_provenance register must be a list')
+    if mode=='not_provided' and register:
+        raise VerifyFailure('not_provided provenance must have an empty register')
+    if mode=='documented_verified' and not register:
+        raise VerifyFailure('documented provenance requires a register')
+    for item in register:
+        if not isinstance(item,dict) or set(item)!={'json_pointer','evidence_id','source_type','as_of_date','confidence'}:
+            raise VerifyFailure('invalid input_provenance register entry')
+        if not isinstance(item['json_pointer'],str) or not item['json_pointer'].startswith('/'):
+            raise VerifyFailure('input_provenance entry requires JSON Pointer')
+        if not isinstance(item['evidence_id'],str) or not item['evidence_id']:
+            raise VerifyFailure('input_provenance entry requires evidence_id')
+        if item['source_type'] not in ('user_statement','statement','tax_form','ssa_statement','estimate','fictional_fixture'):
+            raise VerifyFailure('unsupported input_provenance source_type')
+        if item['confidence'] not in ('documented','supplied','assumed'):
+            raise VerifyFailure('unsupported input_provenance confidence')
+        dt=item['as_of_date']
+        if not isinstance(dt,str) or len(dt)!=10:
+            raise VerifyFailure('input_provenance date must be YYYY-MM-DD')
+        try:
+            date.fromisoformat(dt)
+        except ValueError as exc:
+            raise VerifyFailure('invalid input_provenance date') from exc
+
+
+def _verify(x,plan=None,engine_dir=None):
     if x.get('engine_version')!='2.2-auditable-restricted':
         raise VerifyFailure('unexpected or unaudited engine')
+    # Added by M0; older v2.2 outputs without metadata remain arithmetically
+    # verifiable, but no evidence claims may be invented or upgraded.
+    if 'input_provenance' in x:
+        verify_provenance(x['input_provenance'])
+    if 'evidence_status' in x:
+        expected={'contract_version':'1.0','model':'restricted_research',
+            'input':x['input_provenance']['mode'],'input_independently_verified':False,
+            'professional_review':'not_recorded','market_calibration':'not_validated',
+            'tax_rules':'2026_reference_with_hypothetical_future_indexing',
+            'full_household_conclusion':False}
+        if (x['evidence_status']!=expected or
+            type(x['evidence_status']['input_independently_verified']) is not bool or
+            type(x['evidence_status']['full_household_conclusion']) is not bool):
+            raise VerifyFailure('unsupported evidence or professional-approval claim')
+    if plan is not None:
+        for key,expected in [('scenario',plan['name']),
+                             ('opening_balance_status',plan['opening_balance_status']),
+                             ('input_provenance',plan.get('input_provenance',{'mode':'not_provided','register':[]}))]:
+            if (key=='input_provenance' and 'input_provenance' not in x
+                    and 'evidence_status' not in x):
+                continue  # Legacy v2.2: no provenance or evidence claims to compare.
+            if x[key]!=expected:
+                raise VerifyFailure(f'{key} mismatched to plan')
     count=x['trials']
     if type(count) is not int or count<=0:
         raise VerifyFailure('MC trial count must be a positive integer')
@@ -62,7 +137,7 @@ def verify(x,plan=None,engine_dir=None):
         elif type(failure) is not int or not first_year<=failure<=last_year:
             raise VerifyFailure('unfunded MC path needs a failure year within the horizon')
     successes=sum(z['funded'] for z in manifest)
-    if x['success_paths']!=successes:
+    if type(x['success_paths']) is not int or x['success_paths']!=successes:
         raise VerifyFailure('MC funded path count wrong')
     close(x['modeled_all_obligations_funded_fraction'],successes/count,'MC success fraction',.00001)
     interval=x['mc_sampling_wilson95']
@@ -115,8 +190,25 @@ def verify(x,plan=None,engine_dir=None):
     failure_years=[]
     for index,row in enumerate(ledger):
         y=row['year']
-        if y!=first_year+index:
+        if type(y) is not int or y!=first_year+index:
             raise VerifyFailure('ledger years must be consecutive and ordered')
+        numeric_fields=('age_primary','market_return','inflation_factor','opening_total',
+            'investment_growth_total','wages_gross','wages_taxable','pretax_contributions',
+            'social_security_gross','pension_gross','other_after_tax_income','living_expenses_due',
+            'living_expenses_paid','rmd_total','roth_converted',
+            'realized_ltcg','ira_extra_taxable','tax_due_total','tax_paid',
+            'closing_total','closing_total_real','reconciliation_residual')
+        numeric_vector([row[key] for key in numeric_fields],len(numeric_fields),'annual numeric fields')
+        for field in ('rmd','conversion_transfers','skipped_conversions','source_ids'):
+            if not isinstance(row[field],list):
+                raise VerifyFailure(f'{y}: {field} must be a list')
+        for field in ('opening_accounts','closing_accounts','growth_by_account','extra_draws',
+                      'taxable_basis_end','pretax_contribution_by_account','account_reconciliation_residuals'):
+            if not isinstance(row[field],dict):
+                raise VerifyFailure(f'{y}: {field} must be an object')
+            numeric_vector(list(row[field].values()),len(row[field]),field)
+        for flows in row['account_flows'].values():
+            numeric_vector(list(flows.values()),len(flows),'account flows')
         shortfalls=[row[field] for field in ('unmet_spending','unpaid_tax','unmet_rmd')]
         if any(type(value) not in (int,float) or not isfinite(value) or value<0
                or value!=round(value,2) for value in shortfalls):
@@ -243,7 +335,11 @@ def verify(x,plan=None,engine_dir=None):
             raise VerifyFailure('engine source SHA mismatch')
     return {'passed':True,'annual_rows':len(ledger),'mc_paths':count,
             'assertions_checked':checks,'max_account_residual_dollars':round(max_residual,6),
-            'verified_input_hash':plan is not None,'verified_engine_hash':engine_dir is not None}
+            'verified_input_hash':plan is not None,'verified_engine_hash':engine_dir is not None,
+            'validation_level':'output_arithmetic_only',
+            'limitations':['Intermediate annual percentiles and path truth require engine replay.',
+                           'Consistent multi-field changes may preserve arithmetic identities.',
+                           'Not a complete independent tax-law or input-evidence verification.']}
 
 def main():
     ap=argparse.ArgumentParser()
