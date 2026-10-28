@@ -17,21 +17,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Syntax-check all Python modules
-        run: python -m compileall -q scripts tests
-      - name: Independently reproducible published examples
-        run: python -m unittest discover -s tests -p 'test_professional_models.py' -v
-      - name: Validate strict fictional household fixture
-        run: python scripts/audit_plan.py validate examples/audited-household-2026.json
-      - name: Run annual accounting and seed-fixed market paths
-        run: python scripts/audit_plan.py run examples/audited-household-2026.json --output /tmp/audit.json
-      - name: Verify output without importing simulator
-        run: python scripts/verify_outputs.py /tmp/audit.json --plan examples/audited-household-2026.json --engine-dir scripts --output /tmp/verification.json
-      - name: Offline HTML report smoke test
-        run: python scripts/render_audit.py examples/audited-household-2026.json --output /tmp/audit-report.html
-      - name: Verify report is self-contained
-        run: |
-          test -s /tmp/audit-report.html
-          ! grep -q '__AUDIT_DATA__' /tmp/audit-report.html
-      - name: Historical source-fixture smoke test
-        run: python scripts/market_history.py examples/nyu_2000_2018_partial.csv --horizon 10 --output /tmp/historical.json
+      - name: Reproduce complete offline financial audit
+        run: sh scripts/verify_local.sh
