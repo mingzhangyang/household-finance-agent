@@ -105,7 +105,7 @@ def federal_tax(*, wages_taxable, pension, ira_distributions, roth_conversions, 
     enhanced=0.
     if 2026<=year<=2028 and elderly:
         threshold=150000. if status=='mfj' else 75000.
-        enhanced=elderly*max(0.,6000.-.06*max(0.,agi-threshold))
+        enhanced=max(0.,elderly*6000.-.06*max(0.,agi-threshold))
     deduction=std_deduction+enhanced
     taxable_ordinary=max(0.,ordinary-deduction)
     taxable_pref=max(0.,ltcg-max(0.,deduction-ordinary))
