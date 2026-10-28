@@ -1,32 +1,30 @@
-# Household Finance Agent — reproducible, auditable restricted v2.1
+# Household Finance Agent
 
-An installable ChatGPT Skill with an original interactive, offline financial planning report. **The v2.1 engine deliberately restricts supported tax and investment scenarios** to provide transparent, independently checkable calculations instead of broad but unverifiable claims.
+An evidence-first ChatGPT Skill and financial-planning research toolkit. **Not a certified planner, tax-return preparer, or substitute for a Social Security benefit statement.**
 
-## Quick start
+Repository initialized October 28, 2026. The original v2.1 audited planner was distributed separately as a Skill archive. Its full engine, original UI templates and 64-test suite **have not yet been imported into this repository**. Do not assume this GitHub branch contains a runnable end-to-end v2.1 financial report.
 
-```bash
-python scripts/audit_plan.py validate examples/audited-household-2026.json
-python scripts/audit_plan.py run examples/audited-household-2026.json --output result.json
-python scripts/verify_outputs.py result.json --plan examples/audited-household-2026.json --engine-dir scripts --output verification.json
-python scripts/render_audit.py examples/audited-household-2026.json --output financial_audit_dashboard.html
-python scripts/audit_plan.py trace examples/audited-household-2026.json --path-index 17 --output monte_carlo_path_17.json
-python -m unittest discover -s tests -v
-```
+## Current code in feat/professional-model-foundation
 
-Open `financial_audit_dashboard.html` locally in a browser. The tool can switch between four **Python-precomputed** scenarios, drill down by year into federal tax brackets and all account transfers, inspect Monte Carlo paths, and export annual cash flow CSV or audited JSON. The report is offline and contains its underlying private data in plaintext: **do not publish a real family's file**.
+Standalone Python modules in scripts/:
 
-## What v2.1 improves
+- ssa_benefits.py: published 2026/2027 PIA bend points, AIME computation for *already-indexed* earnings, and worker retirement claim-age factors.
+- lifecycle_rules.py: explicit family-status timeline and survivor-income fail-closed gate; no spouse/survivor benefit award calculation.
+- market_history.py: strict stock/bond return CSV ingestion, SHA256, historical windows and deterministic paired block-bootstrap stress tests.
+- tax_extensions.py: IRS NIIT base formula when NII and MAGI are already independently and correctly determined.
 
-- Validate monetary types, dates, account ownership, contribution limits, IRA before-tax basis, selected RMD treatment, and SSA benefit assumptions; reject unsupported scenarios instead of inventing behavior.
-- Apply 2026 official federal tax brackets, standard deductions and extra-senior-deduction assumptions, Social Security taxation, stacked long-term capital-gains rates, FICA, 2027 published Social Security wage base, uniform lifetime RMDs, 401(k) pre-tax deferrals and limited IRA-to-Roth conversions.
-- Model cash/retirement-account transfers separately from external spending and tax flows; write double-entry conservation journal, tax-bracket breakdown and per-account residual per year.
-- Use seeded two-asset correlated Gaussian Monte Carlo (unvalidated returns) with a path manifest, deterministic replay, Wilson sampling interval and code/input SHA256 identifiers.
-- `verify_outputs.py` is a separately implemented output-only verifier; it recomputes arithmetic from JSON without importing the main engine. Tampering tests intentionally change results to confirm detection.
+To run included tests:
 
-## Limits and status
+    python -m unittest discover -s tests -p test_professional_modules.py -v
 
-**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Taxes in 2027 and later use a **hypothetical indexed 2026 tax schedule**, not enacted future tax law; SSA's 2027 wage cap is explicitly a separate published exception. Some yearly timing conventions use year-end approximations.
+See references/professional-model-gates.md for official source links, scope, limitations, and release gates.
 
-The legacy v1 engine (`scripts/plan.py` and `scripts/render_dashboard.py`) remains available for historical compatibility **only**, and is not the default.
+## Incomplete and deliberately not asserted
 
-See `references/rules-provenance.md`, `references/audit-methodology.md`, and `references/validation-report.md`.
+- The previous audited engine, its templates, and legacy regression suite are **not present yet**.
+- NIIT is not wired into a complete Form 1040 / 8960 projection.
+- No SSA earnings-history indexing, annual COLA, spouse, survivor, or dual-entitlement calculation.
+- No pinned independent 1928-present dataset or third-party professional model comparison.
+- Passing module tests is not proof of correct household retirement success predictions.
+
+Do not commit actual account balances, Social Security records, tax returns, credentials or identifiable household information. This code is research-only until independently reviewed.
