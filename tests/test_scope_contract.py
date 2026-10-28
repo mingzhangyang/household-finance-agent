@@ -1,13 +1,15 @@
 """Executable M0 boundaries and evidence-status separation."""
 import copy
 import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from audit_plan import ModelError, evaluate, validate
+from audit_plan import ModelError, evaluate, run_path, validate
 
 
 def plan():
@@ -65,6 +67,45 @@ class ScopeContract(unittest.TestCase):
         p = plan(); p['evidence_status'] = {'professional_review': 'passed'}
         with self.assertRaises(ModelError):
             validate(p)
+
+    def test_explicit_null_provenance_rejected(self):
+        p = plan(); p['input_provenance'] = None
+        for operation in (validate, evaluate):
+            with self.subTest(operation=operation.__name__), self.assertRaises(ModelError):
+                operation(p)
+
+    def test_oversized_json_integer_rejected(self):
+        p = plan(); p['accounts'][0]['balance'] = 10**400
+        for operation in (validate, evaluate):
+            with self.subTest(operation=operation.__name__), self.assertRaises(ModelError):
+                operation(p)
+
+    def test_oversized_path_return_rejected(self):
+        with self.assertRaises(ModelError):
+            run_path(plan(), [10**400, 0])
+
+    def test_cli_rejections_have_exit_two_without_traceback_or_output(self):
+        for case in ('null_provenance', 'oversized_integer'):
+            p = plan()
+            if case == 'null_provenance':
+                p['input_provenance'] = None
+            else:
+                p['accounts'][0]['balance'] = 10**400
+            with tempfile.TemporaryDirectory() as tmp:
+                source = Path(tmp)/'invalid.json'
+                source.write_text(json.dumps(p))
+                commands = [[str(ROOT/'scripts/audit_plan.py'), command, str(source)]
+                            for command in ('validate', 'run', 'trace')]
+                commands.append([str(ROOT/'scripts/render_audit.py'), str(source)])
+                for index, command in enumerate(commands):
+                    with self.subTest(case=case, command=command[0:2]):
+                        output = Path(tmp)/f'output-{index}'
+                        check = subprocess.run([sys.executable, *command, '--output', str(output)],
+                                               capture_output=True, text=True)
+                        self.assertEqual(check.returncode, 2, check.stdout+check.stderr)
+                        self.assertIn('ERROR:', check.stderr)
+                        self.assertNotIn('Traceback', check.stderr)
+                        self.assertFalse(output.exists())
 
 
 if __name__ == '__main__':
