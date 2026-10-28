@@ -1,49 +1,24 @@
-# Model audit methodology and separate verification
+# Audited v2.2 household input contract (schema v2.0)
 
-## Two distinct requirements
+The input schema is deliberately strict and enforced by `python scripts/audit_plan.py validate examples/audited-household-2026.json`. Unknown fields fail validation; silently guessing missing amounts is prohibited. The result engine version is `2.2-auditable-restricted` while the independent input schema version is `"2.0"`.
 
-1. **Software correctness**: arithmetic, tax reference tables, conditional logic and account transfers are deterministic, source-linked and tested. A separate `verify_outputs.py` verifies a saved output **without importing** financial-calculation modules.
-2. **Professional planning validity**: user inputs, real-world market calibration, future legislation, SSA benefit projections, investment tax-lot accounting and household events must also be correct. **This second requirement is not met by v2.1.** A CPA/CFP may inspect the ledger but has not certified it.
+## Required household and dated balances
 
-## Annual computation (all nominal USD)
+- `currency: "USD"`, `as_of_year: 2026`, future `end_year`; source balances represent December 31, 2026. As of October 28, 2026 those balances must be **projected**, never falsely described as existing year-end bank statements. Use `opening_balance_status: "projected_2026_12_31"` until a dated verified statement exists.
+- `members`: one single filer or two married-joint filing adults, each with birth year, retirement age, wages and wage growth, Social Security selected claim age **and an age-specific 2026-real annual benefit estimate**, with `ss_estimate_basis: "2026_real_at_selected_claim_age"`. SSA amount is not dynamically computed from the new reference PIA/claim module.
+- `accounts`: exactly one cash account; taxable account must supply market value and cost basis under proportional long-term-gain assumption; all IRA and 401(k) amounts must have known owners and fully pretax confirmation. Roth distributions require an explicit qualified assumption. Modeling tax lots, ordinary dividends and foreign exclusions is unsupported.
+- `tax_policy`: `jurisdiction: "US_federal"`, `reference_year: 2026`, `filing_status: "single"|"mfj"`, `state_income_tax: "excluded_with_disclosure"`, `future_bracket_inflation` hypothetical assumption. NIIT is computed on modeled cash interest + positive realized LTCG and **MAGI=AGI assumption**, using $200k/$250k threshold. No Form 8960 deductions or unmodeled investment income.
+- `living_expenses_annual_real`, optional event income/expenses (event income only with explicit `tax_status: "net_after_all_taxes"`), `roth_conversions` from a named same-owner traditional IRA into Roth, `withdrawal_order` listing accounts once with cash first, and `assumptions` (cash yield, portfolio mean/volatility, correlation, equity allocation, fees, inflation, trials and seed).
+- RMD uses prior December 31 fully pretax balances and supported tables; ages beyond or special inherited/working circumstances fail closed. Withdrawal before age 60 is blocked instead of being assumed penalty-free.
 
-For year `t`:
+## Evidence and privacy
 
-1. Read every account balance at prior December 31. Apply same-year cash interest and hypothetical market return (year-end flow convention).
-2. Determine who remains employed, wages, inflation-adjusted employee pretax 401(k) transfers to owned retirement accounts, pensions, supplied SSA retirement benefits and one-time net income/expenses.
-3. Calculate RMD from *prior-year-end* fully pretax balance and the owner age's Uniform Lifetime Table divisor. Treat RMD as internal account-to-cash transfer and ordinary taxable income.
-4. Apply scheduled same-owner traditional IRA -> Roth conversions as internal transfers and as **ordinary taxable income**. Do not allow RMD to count toward the conversion amount.
-5. Iteratively solve for withdrawals to meet household expenditure **plus** resulting federal income tax and payroll tax. Treat positive proportional long-term gains on taxable account sales as preferential gains; pretax IRA/401k sales as ordinary income. Block penalty-sensitive under-age-60 withdrawals rather than assume exceptions.
-6. Set tax paid and spending paid to actual available cash; expose unpaid tax and unmet spending as **failure conditions** rather than suppressing them.
-7. Verify the household equation and each account's complete journal entry, including deposits, RMD, conversion, optional draws, cash receipts and cash tax/spending. Raising an exception on mismatch > $0.01.
+`input_provenance` supports `mode: fictional_demo|unverified_user_data|documented_verified` with entries holding `json_pointer`, `evidence_id`, `source_type`, `as_of_date`, and `confidence`. Verified mode requires references covering materially relevant balances, basis, wages, expenses and age-specific SSA amounts. A reference is **not** proof that the external documents were professionally reviewed.
 
-Whole-household balance equation:
+Do not commit sensitive user statements, account numbers, SSNs, or real family exports to Git. Offline interactive HTML embeds the input and audited output in plaintext and is **not encrypted**.
 
-`ending_total = opening_total + gains + gross_external_income - actual_living_spend - actual_tax_paid`
+## Audit output
 
-401(k) contributions, RMD distributions and Roth conversions are **internal transfers**, not new outside wealth. Pro-rata taxable basis decreases when a taxable investment is sold. The next year's basis is carried forward. The model assumes all sale proceeds above prorated basis are positive long-term gains, no loss offset or tax lot selection.
-
-## Market paths and interpretation
-
-For each year draw two independent standard normals `z1,z2`. Set hypothetical stock `R_e=mu_e+sigma_e*z1`; bond `R_b=mu_b+sigma_b*(rho*z1+sqrt(1-rho^2)*z2)`; blended return `R=equity_weight*R_e+(1-equity_weight)*R_b-fee`, floored at -99.9%. `random.Random(seed)` and fixed trial count permit exact replay. Path `i` succeeds iff there are no years with unpaid taxes, unmet living expenses, unmet RMDs or skipped requested conversions. Wilson 95% interval describes random sample error ONLY, not uncertainty in the market assumptions.
-
-Every saved report contains `simulated_path_manifest` of `{path_index, funded, first_failure_year, terminal_real}` for all paths. The saved seed and `trace --path-index i` reconstruct all annual flows for any selected path. Percentiles are linear interpolations of sorted terminal **inflation-adjusted** balances. The display has P10/P50/P90 yearly marginal bands, which are **not** percentile trajectories of the same individual path.
-
-## Independent test protocol
-
-- Obtain official reference rules and compare individual tax breakpoints, marginal rates, SSA provisional income, 2026 SS wage base, official 2027 SSA wage base, LTCG stacking, enhanced senior deduction, 401(k) limits and Pub 590-B RMD divisors.
-- Use hand calculations not copied from the implementation; e.g., $100k 2026 gross single wage, $20k traditional 401(k) deferral, $60k living expense, no interest/gains => $80k ordinary wage, 2026 standard deduction $16,100, modeled federal tax $8,770, FICA $7,650, cash after wage/deferral/expense/taxes $3,580, 401(k) closing +$20k.
-- Independently recompose bracket and gains lines, all 2027 earnings, total tax and each account balance; reject a mutated amount, path summary or data SHA.
-- Validate every scenario's stochastic paths and deterministic annual rows; browser tests must check that four scenes are independent payloads, year drilldown works, JSON/CSV downloads work, and mobile layout has no overflow.
-- Calibrate real financial assumptions and cross-validate with independent professional planning packages before adopting this for actual family decisions. **No calibration or independent third-party professional sign-off currently exists.**
-
-## Known critical gaps / deployment gates
-
-- **2027+ projected US tax law:** except for specifically published SSA 2027 wage cap, 2026 federal brackets are indexed with an arbitrary planning input, not official 2027 or future IRS law.
-- **Federal-only simplified income tax:** excludes state tax, NIIT, credits, AMT, Medicare IRMAA, ACA, charitable itemization, passive income, ordinary dividends and investment interest besides cash yield, plus inherited IRA and capital gains tax lots.
-- **SSA estimates:** user-supplied amount for selected claim age; cannot optimize claiming age, family spousal/survivor benefits, earnings test or COLA reality.
-- **Retirement timing:** years, not dates; 59½ is approximated with a conservative under-age-60 restriction, no early-withdrawal exemptions; first-year RMD deferral to April of next year omitted.
-- **Monte Carlo:** no historical fit, dynamic correlations, fat tails, sequence-specific spending adjustments, tax-driven asset allocation or return-regime simulation.
-- **Life events:** no mortality, death of one spouse, divorce, remarriage, inheritance, disability, changing filing status, pension optionality or long-term-care stochastic expenses.
-
-Until these are addressed for a specific family's profile, describe outputs as **reproducible restricted-scope what-if estimates** rather than assured retirement probabilities, complete financial plans, or professionally approved tax calculations.
+- Exact canonical input JSON SHA256, engine source fingerprint of `audit_plan.py` + `tax2026.py` + `tax_extensions.py`, explicit reference sources and 2026 policy assumptions.
+- Annual accounts and cash conservation ledger, regular tax brackets, NIIT 3.8% base/rate/tax, FICA, withdrawals and RMD records, seeded Monte Carlo path manifest. Monetary presentation rounds to cents; independent verifier tolerates small summed rounding differences while verifying unrounded conservation.
+- For `trace`, re-run a chosen Monte Carlo path with the supplied random seed and index. Never call a sampling interval a real-world retirement success confidence interval.

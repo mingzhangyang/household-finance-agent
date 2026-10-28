@@ -5,8 +5,8 @@ Incremental research foundation, NOT a complete RightCapital-equivalent system o
 ## 1. Year-by-year tax
 
 - Original v2.1 engine uses a 2026 US federal reference table with assumed future indexing. Source: https://www.irs.gov/irb/2025-45_IRB
-- This branch adds only an isolated NIIT base formula: 3.8% of smaller of proper net investment income and excess MAGI. IRS thresholds: single/HOH $200k; MFJ $250k; MFS $125k. https://www.irs.gov/individuals/net-investment-income-tax
-- NIIT is NOT included automatically in v2.1 total tax. MAGI, NII, deductible expenses, state tax, Form 8960 special rules and future-year legislation remain unsupported.
+- The foundation API `niit_core` provides an isolated NIIT base formula: 3.8% of smaller of proper net investment income and excess MAGI. IRS thresholds: single/HOH $200k; MFJ $250k; MFS $125k. https://www.irs.gov/individuals/net-investment-income-tax
+- The v2.2 annual engine now includes restricted NIIT on bank interest and positive realized LTCG, assuming MAGI equals AGI. The standalone `niit_core` API remains available. Other MAGI/NII adjustments, deductible expenses, state tax, Form 8960 special rules and future-year legislation remain unsupported.
 - Admission gate: tax-year-pinned tables, complete cost basis and tax forms, independently checked official cases, reconciled accounts, and no silently assumed zeroes.
 
 ## 2. SSA retirement and lifecycle

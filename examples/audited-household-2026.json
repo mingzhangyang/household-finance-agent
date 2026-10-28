@@ -1,0 +1,137 @@
+{
+  "version": "2.0",
+  "name": "Audit fixture - fictional household (no real financial data)",
+  "currency": "USD",
+  "as_of_year": 2026,
+  "opening_balance_status": "projected_2026_12_31",
+  "end_year": 2066,
+  "members": [
+    {
+      "id": "person_a",
+      "birth_year": 1981,
+      "retirement_age": 65,
+      "annual_wages_2026": 150000,
+      "wage_growth": 0.025,
+      "ss_claim_age": 67,
+      "ss_annual_2026_real_at_chosen_claim_age": 36000,
+      "ss_estimate_basis": "2026_real_at_selected_claim_age",
+      "annual_pretax_401k_2026_real": 18000,
+      "pretax_401k_target": "401k_a"
+    },
+    {
+      "id": "person_b",
+      "birth_year": 1984,
+      "retirement_age": 65,
+      "annual_wages_2026": 70000,
+      "wage_growth": 0.025,
+      "ss_claim_age": 67,
+      "ss_annual_2026_real_at_chosen_claim_age": 24000,
+      "ss_estimate_basis": "2026_real_at_selected_claim_age",
+      "annual_pretax_401k_2026_real": 9000,
+      "pretax_401k_target": "401k_b"
+    }
+  ],
+  "accounts": [
+    {
+      "id": "cash",
+      "kind": "cash",
+      "balance": 80000
+    },
+    {
+      "id": "brokerage",
+      "kind": "taxable",
+      "balance": 300000,
+      "basis": 250000,
+      "gain_treatment": "long_term_proportional_no_loss_offset"
+    },
+    {
+      "id": "401k_a",
+      "kind": "traditional_401k",
+      "balance": 380000,
+      "owner": "person_a",
+      "still_working_exception": false,
+      "fully_pretax_confirmed": true
+    },
+    {
+      "id": "401k_b",
+      "kind": "traditional_401k",
+      "balance": 160000,
+      "owner": "person_b",
+      "still_working_exception": false,
+      "fully_pretax_confirmed": true
+    },
+    {
+      "id": "ira_a",
+      "kind": "traditional_ira",
+      "balance": 110000,
+      "owner": "person_a",
+      "rmd_table": "uniform",
+      "fully_pretax_confirmed": true
+    },
+    {
+      "id": "roth_a",
+      "kind": "roth_ira",
+      "balance": 100000,
+      "owner": "person_a",
+      "qualified_distributions_confirmed": true
+    }
+  ],
+  "tax_policy": {
+    "jurisdiction": "US_federal",
+    "reference_year": 2026,
+    "filing_status": "mfj",
+    "state_income_tax": "excluded_with_disclosure",
+    "future_bracket_inflation": 0.025
+  },
+  "living_expenses_annual_real": 130000,
+  "events": [
+    {
+      "year": 2032,
+      "kind": "expense",
+      "amount": 70000,
+      "dollars": "2026_real"
+    }
+  ],
+  "roth_conversions": [],
+  "terminal_target_2026_real": 200000,
+  "withdrawal_order": [
+    "cash",
+    "brokerage",
+    "ira_a",
+    "401k_a",
+    "401k_b",
+    "roth_a"
+  ],
+  "assumptions": {
+    "inflation": 0.025,
+    "equity_weight": 0.6,
+    "equity_mean": 0.072,
+    "equity_volatility": 0.18,
+    "bond_mean": 0.032,
+    "bond_volatility": 0.065,
+    "equity_bond_correlation": 0.15,
+    "annual_investment_fee": 0.003,
+    "cash_yield": 0.015,
+    "trials": 300,
+    "seed": 42
+  },
+  "input_provenance": {
+    "mode": "fictional_demo",
+    "register": [
+      {
+        "json_pointer": "/living_expenses_annual_real",
+        "evidence_id": "FICTION-DEMO-EXPENSES",
+        "source_type": "fictional_fixture",
+        "as_of_date": "2026-10-27",
+        "confidence": "assumed"
+      },
+      {
+        "json_pointer": "/accounts/0/balance",
+        "evidence_id": "FICTION-DEMO-CASH",
+        "source_type": "fictional_fixture",
+        "as_of_date": "2026-10-27",
+        "confidence": "assumed"
+      }
+    ]
+  }
+}

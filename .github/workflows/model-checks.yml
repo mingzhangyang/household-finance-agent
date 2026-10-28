@@ -1,0 +1,21 @@
+name: finance-model-checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  audited-calculations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reproduce complete offline financial audit
+        run: sh scripts/verify_local.sh

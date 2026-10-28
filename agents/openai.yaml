@@ -1,0 +1,3 @@
+interface:
+  display_name: "Household Finance Agent"
+  short_description: "Auditable US household financial planning"
