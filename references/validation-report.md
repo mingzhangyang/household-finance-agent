@@ -4,6 +4,17 @@ This is a repeatable QA record, not an independent CPA/CFP attestation. Execute 
 
 ## PR #2 review-fix verification (2026-10-28)
 
+Fourth review: the `c88607c` checkout plus these six fixes passed **105 tests**, the **40-year / 300-path** fictional run, **2,990 annual ledger verifier assertions**, historical-fixture checks and all four HTML scenarios through `sh scripts/verify_local.sh`. The 17 new tests in `test_review_round4.py` cover:
+
+- Annual MC year coverage, finite ordered bands, final percentiles and funded-to-date counts, including exclusion of the failure year itself.
+- Omitted ordinary-tax bands even when tax totals and cash payments are consistently lowered.
+- RMD opening-balance anchors even when source balances and shortfall summaries are consistently lowered.
+- Conversion transfer totals, taxable conversion income and each account's journals, including multiple unrounded transfers and consistently understated conversion tax/cash entries.
+- Working early claimants already at birth-year FRA, overlap outside/inside the horizon and retirement/claim boundaries.
+- Explicit unsupported 401(k) RMD tables, while accepting omitted/default or explicit uniform tables.
+
+Existing synthetic trial-count and Wilson tests now also supply internally consistent annual MC summaries. The plan's year-range anchor runs before annual-series checks. Intermediate-year percentiles receive structural checks only: the manifest does not include all annual path balances needed for independent numerical reconstruction. The maximum displayed account residual remained $0.013647. These are local results; real-browser and GitHub Actions limitations below still apply.
+
 Third review and conflict resolution: merged `main` at `76f43a6` into the PR based on `bc44f0f`, retaining both research API families and all 14 foundation tests. The resolved working tree passed **88 tests**, the 40-year / 300-path fictional run, **2,400 annual verifier assertions**, and all four HTML scenarios through `sh scripts/verify_local.sh`. The 17 new tests in `test_review_round3.py` cover all eight findings in Copilot's summary-only review:
 
 - Real balances and inflation factors reconciled to the supplied plan.

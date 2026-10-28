@@ -41,6 +41,8 @@ def verify(x,plan=None,engine_dir=None):
     first_year,last_year=x['year_range']
     if type(first_year) is not int or type(last_year) is not int or first_year>last_year:
         raise VerifyFailure('invalid projection year range')
+    if plan is not None and [first_year,last_year]!=[plan['as_of_year']+1,plan['end_year']]:
+        raise VerifyFailure('year range mismatched to plan')
     if plan is not None and x['tax_policy']!=plan['tax_policy']:
         raise VerifyFailure('output tax policy mismatched to plan')
     if x['tax_policy']['filing_status'] not in ('single','mfj'):
@@ -79,14 +81,30 @@ def verify(x,plan=None,engine_dir=None):
     numeric_vector(x['terminal_real_p10_p50_p90'],3,'terminal percentiles')
     for q,n in zip((.1,.5,.9),x['terminal_real_p10_p50_p90']):
         close(n,quant(finals,q),f'MC quantile {q}',.02)
+    annual=x['annual_real_percentiles']
+    if not isinstance(annual,list) or len(annual)!=last_year-first_year+1:
+        raise VerifyFailure('annual MC percentiles must cover the projection horizon')
+    for index,band in enumerate(annual):
+        year=first_year+index
+        if type(band['year']) is not int or band['year']!=year:
+            raise VerifyFailure('annual MC years must be consecutive and ordered')
+        values=[band[key] for key in ('p10','p50','p90')]
+        numeric_vector(values,3,'annual MC percentiles')
+        if not values[0]<=values[1]<=values[2]:
+            raise VerifyFailure('annual MC percentiles must be ordered')
+        funded=sum(z['first_failure_year'] is None or z['first_failure_year']>year
+                   for z in manifest)
+        if type(band['paths_funded_to_date']) is not int or band['paths_funded_to_date']!=funded:
+            raise VerifyFailure(f'{year}: annual MC funded count disagrees with manifest')
+        if year==last_year:
+            for value,q in zip(values,(.1,.5,.9)):
+                close(value,quant(finals,q),'annual MC terminal percentile',.02)
     ledger=x['deterministic_annual_ledger']['rows']
     checks=0
     max_residual=0
     if not ledger:
         raise VerifyFailure('empty ledger')
     if plan is not None:
-        if [first_year,last_year]!=[plan['as_of_year']+1,plan['end_year']]:
-            raise VerifyFailure('year range mismatched to plan')
         previous_accounts={a['id']:a['balance'] for a in plan['accounts']}
         previous_total=sum(previous_accounts.values())
     else:
@@ -139,6 +157,7 @@ def verify(x,plan=None,engine_dir=None):
                 close(line['tax'],line['taxable']*line['rate'],f'{y}: {field} {band} multiplication',.01)
                 checks+=1
         close(row['tax']['ordinary_tax'],sum(z['tax'] for z in row['tax']['ordinary_bracket_lines']),f'{y}: ordinary brackets')
+        close(row['tax']['ordinary_taxable'],sum(z['taxable'] for z in row['tax']['ordinary_bracket_lines']),f'{y}: ordinary taxable coverage')
         close(row['tax']['capital_gains_tax'],sum(z['tax'] for z in row['tax']['capital_gain_rate_lines']),f'{y}: gains brackets')
         close(row['tax']['federal_income_tax'],row['tax']['ordinary_tax']+row['tax']['capital_gains_tax'],f'{y}: federal tax')
         pf=row['payroll_tax']
@@ -167,20 +186,38 @@ def verify(x,plan=None,engine_dir=None):
         close(row['living_expenses_paid']+row['unmet_spending'],row['living_expenses_due'],f'{y}: unmet living')
         close(row['tax']['long_term_gain_taxable'],sum(z['taxable'] for z in row['tax']['capital_gain_rate_lines']),f'{y}: LTCG bands')
         for item in row['rmd']:
+            if item['account'] not in row['opening_accounts']:
+                raise VerifyFailure(f'{y}: unknown RMD account')
+            close(item['previous_dec31_balance'],row['opening_accounts'][item['account']],f'{y}: RMD opening balance',.01)
             close(item['required'],item['previous_dec31_balance']/item['divisor'],f'{y}: RMD {item["account"]}')
             close(item['taken']+item['unmet'],item['required'],f'{y}: RMD fulfillment')
         close(row['rmd_total'],round(sum(item['taken'] for item in row['rmd']),2),f'{y}: RMD taken aggregate',1e-8)
         close(row['unmet_rmd'],round(sum(item['unmet'] for item in row['rmd']),2),f'{y}: RMD unmet aggregate',1e-8)
+        conversion_in=dict.fromkeys(previous_accounts,0.)
+        conversion_out=dict.fromkeys(previous_accounts,0.)
+        converted=0.
+        for transfer in row['conversion_transfers']:
+            source,target,amount=transfer['from'],transfer['to'],transfer['amount']
+            if source not in previous_accounts or target not in previous_accounts or source==target:
+                raise VerifyFailure(f'{y}: invalid conversion transfer accounts')
+            if type(amount) not in (int,float) or not isfinite(amount) or amount<0:
+                raise VerifyFailure(f'{y}: invalid conversion transfer amount')
+            conversion_out[source]+=amount
+            conversion_in[target]+=amount
+            converted+=amount
+        close(row['roth_converted'],round(converted,2),f'{y}: conversion taxable aggregate',1e-8)
         for aid,flows in row['account_flows'].items():
+            close(flows['roth_conversion_in'],conversion_in[aid],f'{y}: conversion inflow {aid}',1e-7)
+            close(flows['roth_conversion_out'],conversion_out[aid],f'{y}: conversion outflow {aid}',1e-7)
             expected=(row['opening_accounts'][aid]+row['growth_by_account'][aid]+flows['contribution']
                 +flows['roth_conversion_in']+flows['cash_external_inflow']+flows['cash_received_rmd']
                 +flows['cash_received_draws']-flows['required_distribution']-flows['roth_conversion_out']
                 -flows['optional_draw']-flows['cash_tax_and_spending_outflow'])
             close(row['closing_accounts'][aid],expected,f'{y}: account {aid}')
             close(row['account_reconciliation_residuals'][aid],0,f'{y}: {aid} residual',.01)
-            checks+=2
+            checks+=4
             max_residual=max(max_residual,abs(row['closing_accounts'][aid]-expected))
-        checks+=25+(plan is not None)+len(row['rmd'])*2
+        checks+=27+(plan is not None)+len(row['rmd'])*3
         previous_accounts=row['closing_accounts']
         previous_total=row['closing_total']
     summary=x['deterministic_annual_ledger']

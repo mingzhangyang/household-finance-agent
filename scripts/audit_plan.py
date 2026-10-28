@@ -165,7 +165,15 @@ def validate(p):
         _num(m.get('annual_pension_2026_real',0),f'{name}.annual_pension_2026_real')
         _num(m.get('annual_pretax_401k_2026_real',0),f'{name}.annual_pretax_401k_2026_real')
         _int(m.get('pension_start_age',65),f'{name}.pension_start_age',40,100)
-        if (m['ss_claim_age']<min(67,m['retirement_age']) and m['annual_wages_2026']>0
+        # SSA birth-year FRA, rounded up for this whole-year age schema.
+        # https://www.ssa.gov/benefits/retirement/planner/agereduction.html
+        # Birth dates and partial-year earnings tests remain outside this model.
+        birth=m['birth_year']
+        fra_months=792 if birth<=1954 else (792+2*(birth-1954) if birth<1960 else 804)
+        fra_age=(fra_months+11)//12
+        working_before_fra=any(m['ss_claim_age']<=year-birth<min(fra_age,m['retirement_age'])
+                               for year in range(y0+1,y1+1))
+        if (working_before_fra and m['annual_wages_2026']>0
                 and m['ss_annual_2026_real_at_chosen_claim_age']>0):
             raise ModelError('Social Security claimed while still working before FRA needs earnings-test model; unsupported')
     accounts=p.get('accounts')
@@ -191,6 +199,8 @@ def validate(p):
             raise ModelError('traditional account must confirm no nondeductible basis; Form 8606 basis unsupported')
         if kind=='traditional_ira' and acc.get('rmd_table')!='uniform':
             raise ModelError('traditional IRA must confirm uniform RMD table applicability')
+        if kind=='traditional_401k' and acc.get('rmd_table','uniform')!='uniform':
+            raise ModelError('traditional 401k only supports uniform RMD table')
         if kind=='traditional_401k' and acc.get('still_working_exception') is not False:
             raise ModelError('traditional 401k: still-working RMD exception not modeled; explicitly confirm false')
         if kind=='roth_ira' and acc.get('qualified_distributions_confirmed') is not True:

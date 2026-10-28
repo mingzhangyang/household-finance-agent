@@ -125,6 +125,7 @@ class OutputReviewChecks(unittest.TestCase):
                 result['modeled_all_obligations_funded_fraction']=successes/10
                 result['funded_and_target_fraction']=successes/10
                 result['mc_sampling_wilson95']=interval
+                result['annual_real_percentiles'][0]['paths_funded_to_date']=successes
                 self.assertTrue(verify(result,plan)['passed'])
 
     def test_invalid_or_fabricated_wilson_intervals(self):

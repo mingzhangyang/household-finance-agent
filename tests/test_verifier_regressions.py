@@ -20,6 +20,8 @@ class MonteCarloPlanContract(unittest.TestCase):
         result['success_paths']=int(path['funded'])
         result['modeled_all_obligations_funded_fraction']=int(path['funded'])
         result['terminal_real_p10_p50_p90']=[path['terminal_real']]*3
+        result['annual_real_percentiles']=[dict(year=2027,p10=path['terminal_real'],
+            p50=path['terminal_real'],p90=path['terminal_real'],paths_funded_to_date=int(path['funded']))]
         result['funded_and_target_fraction']=int(
             path['funded'] and path['terminal_real']>=plan['terminal_target_2026_real'])
         # Without a plan the verifier cannot know how many paths were requested.

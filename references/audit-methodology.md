@@ -35,6 +35,12 @@ The verifier also anchors the entire output tax policy and the yearly inflation 
 
 Income tax follows the lower-tax comparison in IRS 2026 Publication 505 Worksheet 2-7: preferential gain stacking versus ordinary-rate tax on all taxable income. If the ordinary-rate cap is lower, the ordinary-income component stays on its ordinary brackets and the gain component uses the incremental ordinary brackets above it. The report labels the selected method and displays those actual rates, so components still sum and multiply correctly.
 
+Annual Monte Carlo bands must cover every projected year exactly once, contain finite ordered P10/P50/P90 values, and report funded-to-date counts reconstructed from each path's first failure year (the failure year itself is excluded). Final-year percentiles are recomputed from terminal manifest balances. **Intermediate-year percentile values cannot be independently recomputed from this manifest**, which does not save every path's annual balances; those values receive structural checks only.
+
+Ordinary tax bands must cover the full reported ordinary taxable amount. Each RMD's prior-December balance is anchored to that account's opening balance, allowing one cent for displayed rounding. Completed conversion transfers must sum to the cent-rounded taxable conversion total and match each account's unrounded conversion inflow/outflow journal; skipped transfers are excluded. These are cross-record arithmetic checks, not independent verification of tax-law eligibility or every tax-table threshold.
+
+The earnings-test input gate checks only projected years containing positive wages and benefits, claimed status and an age below birth-year FRA. FRA follows the [SSA birth-year table](https://www.ssa.gov/benefits/retirement/planner/agereduction.html), rounded up to a whole year; this engine has no birth dates or partial-year earnings test. Early claims made before the projection do not by themselves invalidate a person already at FRA. A 401(k) may omit `rmd_table` (Uniform Lifetime default), but an explicitly supplied non-uniform table is rejected, as it is for IRAs.
+
 ## Independent test protocol
 
 - Obtain official reference rules and compare individual tax breakpoints, marginal rates, SSA provisional income, 2026 SS wage base, official 2027 SSA wage base, LTCG stacking, enhanced senior deduction, 401(k) limits and Pub 590-B RMD divisors.
