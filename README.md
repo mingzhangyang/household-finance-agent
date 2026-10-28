@@ -35,8 +35,11 @@ Each scenario's exact plan (including seed and return assumptions) is embedded i
 
 **Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT treatment for dividends/passive income or foreign exclusion, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Taxes in 2027 and later use a **hypothetical indexed 2026 tax schedule**, not enacted future tax law; SSA's 2027 wage cap is explicitly a separate published exception. Some yearly timing conventions use year-end approximations.
 
-The legacy v1 engine (`scripts/plan.py` and `scripts/render_dashboard.py`) remains available for historical compatibility **only**, and is not the default.
+The legacy v1 engine and its browser suite are not present in this checkout. The v2.2 commands above refer to the actual checked-in engine.
 
 Experimental professional reference modules `scripts/social_security.py`, `scripts/lifecycle.py`, and `scripts/market_history.py` are separately callable, but **are not yet integrated into the main projection engine**. The partial 2000–2018 return CSV is only a documented regression fixture, not adequate retirement calibration. No RightCapital numeric cross-validation has occurred.
 
 See `references/professional-validation-gates.md` and `references/rules-provenance.md`, `references/audit-methodology.md`, and `references/validation-report.md`.
+
+
+The merged foundation APIs remain available: `ssa_benefits.py`, `lifecycle_rules.py`, `tax_extensions.niit_core`, and `market_history.load_history`, `metrics`, `historical_windows`, and `paired_block_bootstrap`. Their existing tests run under the same full verification script. The historical loader accepts decimal-return columns; `load_annual_csv` continues to accept the percentage-return fixture schema. Neither API is automatically wired into the main projection.

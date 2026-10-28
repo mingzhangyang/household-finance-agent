@@ -4,6 +4,19 @@ This is a repeatable QA record, not an independent CPA/CFP attestation. Execute 
 
 ## PR #2 review-fix verification (2026-10-28)
 
+Third review and conflict resolution: merged `main` at `76f43a6` into the PR based on `bc44f0f`, retaining both research API families and all 14 foundation tests. The resolved working tree passed **88 tests**, the 40-year / 300-path fictional run, **2,400 annual verifier assertions**, and all four HTML scenarios through `sh scripts/verify_local.sh`. The 17 new tests in `test_review_round3.py` cover all eight findings in Copilot's summary-only review:
+
+- Real balances and inflation factors reconciled to the supplied plan.
+- The entire output tax policy anchored before selecting NIIT thresholds.
+- RMD taken/unmet aggregates checked against cent-rounded detail sums.
+- Pre-1943 workers permitted to claim exactly at FRA without a delayed-credit schedule.
+- Capital-gains tax capped by ordinary-rate tax on all taxable income, with selected-rate ledger and cash-funding tests; IRS 2026 Publication 505 Worksheet 2-7, lines 38–40.
+- Both Wilson interval endpoints independently recomputed and malformed intervals rejected.
+- Monte Carlo funded flags required to be boolean and consistent with failure years.
+- Exactly three finite terminal percentiles required before quantile verification.
+
+README and Skill instructions now describe the checked-in v2 engine and retained foundation APIs instead of referencing missing legacy commands. The four conflicts in README, SKILL, market-history and NIIT modules were reconciled without discarding main's existing interfaces. These are local results; the previously stated browser and Actions limitations still apply.
+
 Second review pass: the `4c33969` checkout plus the follow-up verifier fixes passed **57 tests**, the 40-year / 300-path fictional run, **2,200 verifier assertions**, and all four HTML scenarios via `sh scripts/verify_local.sh`. The 12 added regression tests reject plan/manifest trial-count mismatches, falsified deterministic failure summaries, and consistently understated AGI/NIIT/cash entries. They also cover all supported taxable-income components, one-path plans, invalid counts, and the shared cent-rounding policy for shortfalls. Reports generated with the earlier sub-cent failure policy should be regenerated with the updated engine. Browser-testing and GitHub Actions limitations below still apply.
 
 The reviewed checkout at `d818183` plus these fixes passed `sh scripts/verify_local.sh`: **45 tests**, a 40-year fictional projection with 300 seeded paths, independent output verification, historical-fixture checks and all four HTML scenarios. The verifier reported 2,038 annual assertions and a maximum account residual of $0.013647 from rounded output (within its $0.05 journal tolerance; the engine also checks unrounded accounting).

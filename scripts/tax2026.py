@@ -10,7 +10,7 @@ from math import isfinite
 REFERENCE_YEAR = 2026
 SOURCES = {
     'brackets_standard_senior': 'https://www.irs.gov/irb/2025-45_IRB',
-    'capital_gains': 'https://www.irs.gov/irb/2025-45_IRB',
+    'capital_gains': 'https://www.irs.gov/publications/p505',
     'social_security_tax': 'https://www.irs.gov/publications/p915',
     'payroll': 'https://www.ssa.gov/cola/factsheets/2026.html',
     'payroll_2027': 'https://www.ssa.gov/cola/factsheets/2027.html',
@@ -117,16 +117,31 @@ def federal_tax(*, wages_taxable, pension, ira_distributions, roth_conversions, 
     mid_gain=max(0.,min(taxable_pref-zero_gain,mid_thr-max(zerothr,taxable_ordinary)))
     high_gain=max(0.,taxable_pref-zero_gain-mid_gain)
     pref_tax=mid_gain*.15+high_gain*.20
+    gain_lines=[{'rate':0.0,'taxable':zero_gain,'tax':0.0},
+                {'rate':0.15,'taxable':mid_gain,'tax':mid_gain*.15},
+                {'rate':0.20,'taxable':high_gain,'tax':high_gain*.20}]
+    method='stacked_capital_gains'
+    # Pub. 505 (2026), Worksheet 2-7 lines 38–40: use the smaller
+    # stacked tax or ordinary-rate tax on all taxable income.
+    all_ordinary=progressive_tax(taxable_ordinary+taxable_pref,status,idx)
+    if all_ordinary<ord_tax+pref_tax:
+        method='ordinary_rate_cap'
+        gain_lines=[]
+        for line in progressive_tax_breakdown(taxable_ordinary+taxable_pref,status,idx):
+            top=line['from']+line['taxable']
+            amount=max(0.,top-max(line['from'],taxable_ordinary))
+            if amount:
+                gain_lines.append({'rate':line['rate'],'taxable':amount,'tax':amount*line['rate']})
+        pref_tax=sum(line['tax'] for line in gain_lines)
     return {'gross_ordinary':ordinary,'taxable_social_security':ss_taxable,
         'adjusted_gross_income':agi,'standard_plus_age_deduction':std_deduction,
         'enhanced_senior_deduction':enhanced,'deduction_total':deduction,
         'ordinary_taxable':taxable_ordinary,'long_term_gain_taxable':taxable_pref,
         'ordinary_tax':ord_tax,'capital_gains_tax':pref_tax,
+        'income_tax_method':method,
         'ss_provisional_income':other+.5*ss_benefits,
         'ordinary_bracket_lines':progressive_tax_breakdown(taxable_ordinary,status,idx),
-        'capital_gain_rate_lines':[{'rate':0.0,'taxable':zero_gain,'tax':0.0},
-                    {'rate':0.15,'taxable':mid_gain,'tax':mid_gain*.15},
-                    {'rate':0.20,'taxable':high_gain,'tax':high_gain*.20}],
+        'capital_gain_rate_lines':gain_lines,
         'federal_income_tax':ord_tax+pref_tax,'tax_law_year':2026,
         'year':year,'rule_multiplier':idx,
         'policy':'2026 rates indexed hypothetically; NOT a future-year statute',

@@ -8,7 +8,7 @@ Arithmetic consistency is not a tax-law certification or market calibration.
 import argparse
 import hashlib
 import json
-from math import isfinite
+from math import isfinite, sqrt
 from pathlib import Path
 
 class VerifyFailure(ValueError):
@@ -25,6 +25,11 @@ def quant(vals,q):
     hi=min(lo+1,len(vals)-1)
     return vals[lo]*(1-pos+lo)+vals[hi]*(pos-lo)
 
+def numeric_vector(value,length,description):
+    if (not isinstance(value,list) or len(value)!=length or
+        any(type(v) not in (int,float) or not isfinite(v) for v in value)):
+        raise VerifyFailure(f'{description}: expected {length} finite numeric entries')
+
 def verify(x,plan=None,engine_dir=None):
     if x.get('engine_version')!='2.2-auditable-restricted':
         raise VerifyFailure('unexpected or unaudited engine')
@@ -33,17 +38,45 @@ def verify(x,plan=None,engine_dir=None):
         raise VerifyFailure('MC trial count must be a positive integer')
     if plan is not None and count!=plan['assumptions']['trials']:
         raise VerifyFailure('MC trial count mismatched to plan')
+    first_year,last_year=x['year_range']
+    if type(first_year) is not int or type(last_year) is not int or first_year>last_year:
+        raise VerifyFailure('invalid projection year range')
+    if plan is not None and x['tax_policy']!=plan['tax_policy']:
+        raise VerifyFailure('output tax policy mismatched to plan')
+    if x['tax_policy']['filing_status'] not in ('single','mfj'):
+        raise VerifyFailure('unsupported output filing status')
     manifest=x['simulated_path_manifest']
     if count!=len(manifest):
         raise VerifyFailure('missing Monte Carlo paths')
+    for index,z in enumerate(manifest):
+        if type(z['path_index']) is not int or z['path_index']!=index:
+            raise VerifyFailure('misordered MC paths')
+        if type(z['funded']) is not bool:
+            raise VerifyFailure('MC funded status must be boolean')
+        failure=z['first_failure_year']
+        if z['funded']:
+            if failure is not None:
+                raise VerifyFailure('funded MC path must have no failure year')
+        elif type(failure) is not int or not first_year<=failure<=last_year:
+            raise VerifyFailure('unfunded MC path needs a failure year within the horizon')
     successes=sum(z['funded'] for z in manifest)
     if x['success_paths']!=successes:
         raise VerifyFailure('MC funded path count wrong')
     close(x['modeled_all_obligations_funded_fraction'],successes/count,'MC success fraction',.00001)
-    for index,z in enumerate(manifest):
-        if z['path_index']!=index:
-            raise VerifyFailure('misordered MC paths')
+    interval=x['mc_sampling_wilson95']
+    numeric_vector(interval,2,'Wilson interval')
+    if not 0<=interval[0]<=interval[1]<=1:
+        raise VerifyFailure('Wilson interval must be ordered within [0,1]')
+    # Solve the binomial score interval independently from the saved path counts.
+    zscore=1.96
+    denominator=count+zscore*zscore
+    center=(successes+zscore*zscore/2)/denominator
+    radius=zscore*sqrt(successes*(count-successes)/count+zscore*zscore/4)/denominator
+    for actual,expected in zip(interval,(max(0.,center-radius),min(1.,center+radius))):
+        close(actual,round(expected,4),'Wilson interval endpoint',.00005)
     finals=[z['terminal_real'] for z in manifest]
+    numeric_vector(finals,count,'MC terminal balances')
+    numeric_vector(x['terminal_real_p10_p50_p90'],3,'terminal percentiles')
     for q,n in zip((.1,.5,.9),x['terminal_real_p10_p50_p90']):
         close(n,quant(finals,q),f'MC quantile {q}',.02)
     ledger=x['deterministic_annual_ledger']['rows']
@@ -51,7 +84,6 @@ def verify(x,plan=None,engine_dir=None):
     max_residual=0
     if not ledger:
         raise VerifyFailure('empty ledger')
-    first_year,last_year=x['year_range']
     if plan is not None:
         if [first_year,last_year]!=[plan['as_of_year']+1,plan['end_year']]:
             raise VerifyFailure('year range mismatched to plan')
@@ -89,6 +121,18 @@ def verify(x,plan=None,engine_dir=None):
         external=row['wages_gross']+row['social_security_gross']+row['pension_gross']+row['other_after_tax_income']
         expected=row['opening_total']+row['investment_growth_total']+external-row['living_expenses_paid']-row['tax_paid']
         close(row['closing_total'],expected,f'{y}: whole-household conservation')
+        factor=row['inflation_factor']
+        if type(factor) not in (int,float) or not isfinite(factor) or factor<1:
+            raise VerifyFailure(f'{y}: invalid inflation factor')
+        if plan is not None:
+            factor=(1+plan['assumptions']['inflation'])**(y-plan['as_of_year'])
+            close(row['inflation_factor'],factor,f'{y}: inflation factor mismatched to plan',.0000000051)
+            real_tolerance=.01
+        else:
+            # Exported factors have eight decimals, so allow their rounding
+            # uncertainty when no plan is available to reconstruct the factor.
+            real_tolerance=.01+abs(row['closing_total'])*.0000000051/(factor*max(factor-.0000000051,1e-12))
+        close(row['closing_total_real'],row['closing_total']/factor,f'{y}: real closing balance',real_tolerance)
         close(row['reconciliation_residual'],0,f'{y}: output residual',.01)
         for field in ('ordinary_bracket_lines','capital_gain_rate_lines'):
             for band,line in enumerate(row['tax'][field]):
@@ -125,6 +169,8 @@ def verify(x,plan=None,engine_dir=None):
         for item in row['rmd']:
             close(item['required'],item['previous_dec31_balance']/item['divisor'],f'{y}: RMD {item["account"]}')
             close(item['taken']+item['unmet'],item['required'],f'{y}: RMD fulfillment')
+        close(row['rmd_total'],round(sum(item['taken'] for item in row['rmd']),2),f'{y}: RMD taken aggregate',1e-8)
+        close(row['unmet_rmd'],round(sum(item['unmet'] for item in row['rmd']),2),f'{y}: RMD unmet aggregate',1e-8)
         for aid,flows in row['account_flows'].items():
             expected=(row['opening_accounts'][aid]+row['growth_by_account'][aid]+flows['contribution']
                 +flows['roth_conversion_in']+flows['cash_external_inflow']+flows['cash_received_rmd']
@@ -134,7 +180,7 @@ def verify(x,plan=None,engine_dir=None):
             close(row['account_reconciliation_residuals'][aid],0,f'{y}: {aid} residual',.01)
             checks+=2
             max_residual=max(max_residual,abs(row['closing_accounts'][aid]-expected))
-        checks+=21+len(row['rmd'])*2
+        checks+=25+(plan is not None)+len(row['rmd'])*2
         previous_accounts=row['closing_accounts']
         previous_total=row['closing_total']
     summary=x['deterministic_annual_ledger']

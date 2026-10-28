@@ -31,6 +31,10 @@ Every saved report contains `simulated_path_manifest` of `{path_index, funded, f
 
 With a plan supplied, independent verification requires the manifest's trial count to equal `assumptions.trials`. It derives deterministic `failed` and `first_failure_year` from annual cent-rounded shortfalls and skipped conversions. Restricted AGI is recomposed from taxable wages, pension, required and extra pretax distributions, Roth conversions, cash interest, taxable Social Security and realized LTCG; both reported AGI and NIIT MAGI must match this sum. Net-after-tax event income and gross Social Security are not substituted for taxable income. These checks establish output consistency, not an independent reconstruction of tax law or every Monte Carlo path; use `trace` to replay individual paths.
 
+The verifier also anchors the entire output tax policy and the yearly inflation factor to the supplied plan, checks nominal-to-real closing balances, reconciles cent-rounded RMD detail sums to annual totals, recomputes Wilson interval endpoints, and requires all three terminal percentiles. Every path must have a boolean funded status and a failure year that is null exactly for funded paths, otherwise an integer in the projection horizon. Without a plan, real-balance checks use the reported eight-decimal factor with an allowance for factor rounding; they cannot authenticate the inflation assumption.
+
+Income tax follows the lower-tax comparison in IRS 2026 Publication 505 Worksheet 2-7: preferential gain stacking versus ordinary-rate tax on all taxable income. If the ordinary-rate cap is lower, the ordinary-income component stays on its ordinary brackets and the gain component uses the incremental ordinary brackets above it. The report labels the selected method and displays those actual rates, so components still sum and multiply correctly.
+
 ## Independent test protocol
 
 - Obtain official reference rules and compare individual tax breakpoints, marginal rates, SSA provisional income, 2026 SS wage base, official 2027 SSA wage base, LTCG stacking, enhanced senior deduction, 401(k) limits and Pub 590-B RMD divisors.

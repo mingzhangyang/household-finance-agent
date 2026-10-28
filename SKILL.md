@@ -32,7 +32,7 @@ python scripts/audit_plan.py trace examples/audited-household-2026.json --path-i
 python -m unittest discover -s tests -v
 ```
 
-The example is explicitly **fictional**. `run` emits deterministic account-level and tax-bracket ledgers, 300 seeded Monte Carlo path summaries, sampling interval, tax-policy citation links and code/data fingerprints. `trace` reconstructs a specified random path's full annual ledger. `verify_outputs.py` independently checks output arithmetic without importing the financial simulator. Browser test: `python tests/test_audit_browser.py`, when Playwright and Chromium are installed.
+The example is explicitly **fictional**. `run` emits deterministic account-level and tax-bracket ledgers, 300 seeded Monte Carlo path summaries, sampling interval, tax-policy citation links and code/data fingerprints. `trace` reconstructs a specified random path's full annual ledger. `verify_outputs.py` independently checks output arithmetic without importing the financial simulator. The checked-in Node.js handler test (`tests/report_ui.cjs`, invoked by `tests/test_report.py`) checks report status and exports with a minimal DOM; it is not a full browser layout test.
 
 For scenario comparisons, require equal year range, random seed and path count so the same stochastic paths are used:
 
@@ -47,7 +47,7 @@ For the default visual report, `render_audit.py` creates four independently prec
 - Confirm all material inputs have provenance or are explicitly marked *unverified* / *fictional*; `documented_verified` requires documentary references for each core monetary field but **does not certify the underlying documents**.
 - Verify household annual identity: `closing = opening + investment growth + external income − living paid − taxes paid`.
 - Verify **each account** using all contribution, RMD, conversion, optional draw, cash receipt and cash expense journal entries. Disclose rounding differences separately from unrounded computational reconciliation.
-- Verify income tax lines equal the sum of ordinary progressive brackets plus stacked capital-gains bands; separately recompute the 3.8% NIIT from modeled cash interest, realized capital gains, household MAGI threshold, and its dedicated fields. Recheck payroll tax and RMD divisors independently.
+- Verify income tax lines equal the sum of ordinary progressive brackets plus the selected capital-gain calculation (preferential stacking or the lower ordinary-rate cap); separately recompute the 3.8% NIIT from modeled cash interest, realized capital gains, household MAGI threshold, and its dedicated fields. Recheck payroll tax and RMD divisors independently.
 - Verify every Monte Carlo headline against per-path summaries; replay any selected path using its index and the saved seed. Never call model success share an empirically validated forecast.
 - Label missing law/inputs accurately. A report cannot use the words “certified,” “IRS-validated,” “CPA-approved” or “RightCapital-equivalent” without independent evidence.
 - When no code tools are accessible, explain inability to audit; do not fabricate passing tests or a download file.
@@ -64,6 +64,8 @@ For the default visual report, `render_audit.py` creates four independently prec
 - `examples/audited-household-2026.json` — completely fictional v2 test fixture.
 - `assets/audit-template.html` — private white/teal financial report template, with interactive explanation of the **Python-precomputed** data.
 
-## Legacy compatibility — not professional-grade
+## Source availability and standalone research APIs
 
-`plan.py`, `render_dashboard.py`, `dashboard-template.html`, `examples/sample-household.json`, `references/data-contract.md` and `references/interactive-dashboard.md` are retained **only for comparison with the older demonstration**. The v1 illustrative flat-effective-rate engine is explicitly disallowed as the default for finance decision support. Do not treat historical v1 percentages (57.2% and 35.8%) as comparable to the fictional v2 scenario results, which use different household data and economic inputs.
+The older `plan.py`, `render_dashboard.py` and legacy browser suite are not present in this checkout. Do not invent commands or test evidence for missing files. Use the v2.2 workflow above.
+
+Preserve the standalone APIs brought in from the foundation branch: `ssa_benefits.py`, `lifecycle_rules.py`, `tax_extensions.niit_core`, and the decimal-return CSV / block-bootstrap functions in `market_history.py`. See `references/professional-model-gates.md` and `tests/test_professional_modules.py`. Their schemas differ from the annual engine and the percentage-return CSV fixture; do not interchange them or imply they are integrated into household projections.

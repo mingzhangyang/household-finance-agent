@@ -46,7 +46,7 @@ def claiming_factor(birth_year, claim_age_months):
         cut=min(early,36)*(5/9/100)+max(0,early-36)*(5/12/100)
         return 1.-cut
     delayed=min(delta,840-fra)
-    if birth_year<1943:
+    if birth_year<1943 and delayed>0:
         raise SSARuleError("pre-1943 delayed retirement credit schedule not implemented")
     return 1.+delayed*(2/3/100)
 

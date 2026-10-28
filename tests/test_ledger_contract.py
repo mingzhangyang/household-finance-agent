@@ -130,6 +130,7 @@ class OutputContinuity(unittest.TestCase):
             for phase in ('opening','closing'):
                 row[phase+'_accounts']['cash']+=1000
                 row[phase+'_total']+=1000
+            row['closing_total_real']+=1000/row['inflation_factor']
         # An output-only verifier cannot know the true initial balances.
         self.assertTrue(verify(result)['passed'])
         with self.assertRaisesRegex(VerifyFailure,'continuity'): verify(result,self.plan)

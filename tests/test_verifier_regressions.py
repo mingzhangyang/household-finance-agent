@@ -16,6 +16,7 @@ class MonteCarloPlanContract(unittest.TestCase):
         path=result['simulated_path_manifest'][0]
         result['simulated_path_manifest']=[path]
         result['trials']=1
+        result['mc_sampling_wilson95']=([.2065,1.] if path['funded'] else [0.,.7935])
         result['success_paths']=int(path['funded'])
         result['modeled_all_obligations_funded_fraction']=int(path['funded'])
         result['terminal_real_p10_p50_p90']=[path['terminal_real']]*3
@@ -83,7 +84,7 @@ class DeterministicFailureContract(unittest.TestCase):
                 # A one-cent mutation remains within journal rounding tolerance,
                 # but must still invalidate a summary claiming no failed years.
                 result['deterministic_annual_ledger']['rows'][0][field]=.01
-                with self.assertRaisesRegex(VerifyFailure,'failed summary'):
+                with self.assertRaisesRegex(VerifyFailure,'RMD unmet aggregate' if field=='unmet_rmd' else 'failed summary'):
                     verify(result,plan)
 
     def test_cent_rounding_policy_agrees_across_engine_manifest_and_verifier(self):
