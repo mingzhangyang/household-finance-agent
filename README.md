@@ -1,6 +1,6 @@
-# Household Finance Agent — reproducible, auditable restricted v2.1
+# Household Finance Agent — reproducible, auditable restricted v2.2
 
-An installable ChatGPT Skill with an original interactive, offline financial planning report. **The v2.1 engine deliberately restricts supported tax and investment scenarios** to provide transparent, independently checkable calculations instead of broad but unverifiable claims.
+An installable ChatGPT Skill with an original interactive, offline financial planning report. **The v2.2 engine deliberately restricts supported tax and investment scenarios** to provide transparent, independently checkable calculations instead of broad but unverifiable claims.
 
 ## Quick start
 
@@ -15,28 +15,22 @@ python -m unittest discover -s tests -v
 
 Open `financial_audit_dashboard.html` locally in a browser. The tool can switch between four **Python-precomputed** scenarios, drill down by year into federal tax brackets and all account transfers, inspect Monte Carlo paths, and export annual cash flow CSV or audited JSON. The report is offline and contains its underlying private data in plaintext: **do not publish a real family's file**.
 
-## What v2.1 improves
+## What v2.2 improves
 
 - Validate monetary types, dates, account ownership, contribution limits, IRA before-tax basis, selected RMD treatment, and SSA benefit assumptions; reject unsupported scenarios instead of inventing behavior.
 - Apply 2026 official federal tax brackets, standard deductions and extra-senior-deduction assumptions, Social Security taxation, stacked long-term capital-gains rates, FICA, 2027 published Social Security wage base, uniform lifetime RMDs, 401(k) pre-tax deferrals and limited IRA-to-Roth conversions.
 - Model cash/retirement-account transfers separately from external spending and tax flows; write double-entry conservation journal, tax-bracket breakdown and per-account residual per year.
 - Use seeded two-asset correlated Gaussian Monte Carlo (unvalidated returns) with a path manifest, deterministic replay, Wilson sampling interval and code/input SHA256 identifiers.
+- NIIT 3.8% is included in annual cash-funding and taxable dispositions, with modeled NII limited to bank interest and positive long-term realized gains. The verifier independently checks its income base and rate. The IRS $250k joint / $200k single MAGI thresholds are not inflated.
+- The 2026 extra senior deduction for joint filers is reduced by 6% of household MAGI over $150k once, not per qualified spouse.
 - `verify_outputs.py` is a separately implemented output-only verifier; it recomputes arithmetic from JSON without importing the main engine. Tampering tests intentionally change results to confirm detection.
 
 ## Limits and status
 
-**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No integrated state income tax, NIIT, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Taxes in 2027 and later use a **hypothetical indexed 2026 tax schedule**, not enacted future tax law; SSA's 2027 wage cap is explicitly a separate published exception. Some yearly timing conventions use year-end approximations.
+**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT treatment for dividends/passive income or foreign exclusion, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Taxes in 2027 and later use a **hypothetical indexed 2026 tax schedule**, not enacted future tax law; SSA's 2027 wage cap is explicitly a separate published exception. Some yearly timing conventions use year-end approximations.
 
-Legacy v1 demonstration files are not part of this initial GitHub import. The audited core, independent verifier, report template, fictional input and professional reference modules are tracked here. The earlier full Skill ZIP remains a separate prior artifact until its remaining legacy/support files are deliberately imported.
+The legacy v1 engine (`scripts/plan.py` and `scripts/render_dashboard.py`) remains available for historical compatibility **only**, and is not the default.
 
-See `references/rules-provenance.md`, `references/audit-methodology.md`, and `references/validation-report.md`.
-## Research modules on the development branch
+Experimental professional reference modules `scripts/social_security.py`, `scripts/lifecycle.py`, and `scripts/market_history.py` are separately callable, but **are not yet integrated into the main projection engine**. The partial 2000–2018 return CSV is only a documented regression fixture, not adequate retirement calibration. No RightCapital numeric cross-validation has occurred.
 
-These scripts are **independently runnable and versioned, but not wired into the main funding/tax loop**:
-
-- `scripts/tax_extensions.py`: 2026 federal NIIT, with caller-confirmed MAGI and net investment income.
-- `scripts/social_security.py`: 2026/2027 eligibility-year PIA from externally supplied AIME and monthly worker claiming factors; not SSA earnings-record reconstruction.
-- `scripts/lifecycle.py`: explicit death-year/survivor-spending scenario schedule; no actuarial mortality or filing-status engine.
-- `scripts/market_history.py`: dated historical stock/bond CSV analysis, rolling-window backtests. Included 19-year CSV is a regression fixture, **not a full market calibration**.
-
-Reference tests: `python -m unittest discover -s tests -p 'test_professional_models.py' -v`. The GitHub Actions workflow also runs the audited engine, output verifier, and offline report smoke test. See `references/professional-validation-gates.md` for incomplete integration and independent professional review criteria. Do not infer third-party certification from green tests.
+See `references/professional-validation-gates.md` and `references/rules-provenance.md`, `references/audit-methodology.md`, and `references/validation-report.md`.
