@@ -91,6 +91,16 @@ class ReportRoundTrip(unittest.TestCase):
             self.assertEqual(ledger['first_failure_year'],2027)
 
     @unittest.skipUnless(shutil.which('node'),'Node.js required for report handler regression')
+    def test_invalid_report_hides_conclusions_and_exports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report=render(fixture(),Path(tmp)/'report.html')
+            for mode in ('empty','invalid-json','failed-verification','second-scenario'):
+                with self.subTest(mode=mode):
+                    check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),mode],
+                                         capture_output=True,text=True)
+                    self.assertEqual(check.returncode,0,check.stdout+check.stderr)
+
+    @unittest.skipUnless(shutil.which('node'),'Node.js required for report handler regression')
     def test_report_status_and_download_handlers(self):
         plan=fixture()
         plan['roth_conversions']=[dict(year=2027,amount_nominal=1000000,

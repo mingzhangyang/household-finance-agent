@@ -4,8 +4,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync(process.argv[2], 'utf8');
-const raw = html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/)[1];
+let raw = html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/)[1];
 const payload = JSON.parse(raw);
+const invalidMode = process.argv[3];
+if (invalidMode === 'empty') raw = JSON.stringify({plans:[],results:[],labels:[],verification:[]});
+if (invalidMode === 'invalid-json') raw = '{';
+if (invalidMode === 'failed-verification') raw = JSON.stringify({...payload,verification:payload.verification.map(v=>({...v,passed:false}))});
+if (invalidMode === 'second-scenario') {
+  const broken=JSON.parse(raw);broken.results[1].deterministic_annual_ledger.rows[0].tax.federal_income_tax='invalid';
+  raw=JSON.stringify(broken);
+}
 const downloads = [];
 const blobs = new Map();
 let nextUrl = 0;
@@ -43,6 +51,15 @@ const context = vm.createContext({
 });
 const script = html.match(/<script>\s*('use strict';[\s\S]*?)<\/script>/)[1];
 vm.runInContext(script, context);
+if (invalidMode) {
+  if (invalidMode === 'second-scenario') element('scenario-buttons').children[1].click();
+  assert.equal(context.window.__financialAudit.error, 'invalid_report');
+  assert.equal(element('report-error').hidden, false);
+  assert.equal(element('report-content').style.display, 'none');
+  for (const id of ['download-plan','download-json','download-csv','print']) assert.equal(element(id).disabled,true);
+  console.log('PASS: invalid report hides conclusions and disables exports: '+invalidMode);
+  process.exit(0);
+}
 (async () => {
   for (let i = 0; i < payload.plans.length; i++) {
     element('scenario-buttons').children[i].click();

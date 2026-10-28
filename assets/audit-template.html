@@ -13,7 +13,8 @@
 </head>
 <body>
 <script id="data" type="application/json">__AUDIT_DATA__</script>
-<div class="layout"><aside class="side"><div class="brand">FinPlan <b>Audit</b></div><div class="minor">Private planning · 2026 rules</div>
+<div id="report-error" class="warnings" role="alert" hidden>报告数据缺失、损坏或未通过校验。请使用原始方案重新生成报告；此文件不能用于判断资金是否足够。</div>
+<div id="report-content" class="layout"><aside class="side"><div class="brand">FinPlan <b>Audit</b></div><div class="minor">Private planning · 2026 rules</div>
 <nav aria-label="报告章节"><a href="#snapshot">01 概览 Snapshot</a><a href="#retirement">02 退休预测</a><a href="#scenarios">03 方案对照</a><a href="#cashflow">04 年度现金流</a><a href="#year-detail">05 可追溯账本</a><a href="#sources">06 规则与限制</a></nav>
 <div class="sidefoot">所有财务数据保存在此 HTML 内，浏览器打开即读取。不要公开上传真实家庭报告。</div></aside>
 <main class="main"><header class="topline"><div><div class="eyebrow">HOUSEHOLD FINANCIAL PLAN · AUDITABLE</div><h1>家庭退休与现金流报告</h1><p class="lede">逐年可复算 · 规则可追溯 · 情景预计算 · 不把模型假设当成未来事实</p></div>
@@ -40,11 +41,32 @@
 </main></div>
 <script>
 'use strict';
-const data=JSON.parse(document.getElementById('data').textContent);
+try {
+ const data=JSON.parse(document.getElementById('data').textContent);
+ if(!Array.isArray(data.results)||data.results.length===0||
+    !Array.isArray(data.plans)||!Array.isArray(data.verification)||!Array.isArray(data.labels)||
+    [data.plans,data.verification,data.labels].some(a=>a.length!==data.results.length)) throw Error('Invalid scenario bundle');
+ for(const [i,r] of data.results.entries()){
+  if(data.verification[i].passed!==true||!r.deterministic_annual_ledger.rows.length||
+     !r.annual_real_percentiles.length||r.simulated_path_manifest.length!==r.trials||
+     r.evidence_status.model!=='restricted_research'||r.evidence_status.full_household_conclusion!==false||
+     r.evidence_status.input_independently_verified!==false||r.evidence_status.professional_review!=='not_recorded') throw Error('Invalid report evidence');
+ }
+ startReport(data);
+} catch(error) { failReport(); }
+function failReport(){
+ document.getElementById('report-content').hidden=true;
+ document.getElementById('report-content').style.display='none';
+ document.getElementById('report-error').hidden=false;
+ for(const id of ['download-json','download-plan','download-csv','print'])document.getElementById(id).disabled=true;
+ window.__financialAudit={error:'invalid_report'};
+}
+function startReport(data){
+const amount=(n)=>{if(typeof n!=='number'||!Number.isFinite(n))throw Error('Invalid numeric field');return n};
 const $=(x)=>document.getElementById(x);
-const fmt=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n);
-const full=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
-const pct=(n)=>`${(n*100).toFixed(1)}%`;
+const fmt=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(amount(n));
+const full=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(amount(n));
+const pct=(n)=>`${(amount(n)*100).toFixed(1)}%`;
 let active=0,selectedYear=null;
 function text(id,val){$(id).textContent=val}
 function get(){return data.results[active]}
@@ -65,7 +87,8 @@ function renderChart(r){const svg=$('asset-chart');svg.replaceChildren();
  add('path',{d:mk(det.map(q=>q.closing_total_real)),stroke:'#b08a58','stroke-width':'2','stroke-dasharray':'6 5',fill:'none'});
  for(let i=0;i<s.length;i+=Math.max(1,Math.floor(s.length/6))){let t=add('text',{x:x(i),y:H-8,'text-anchor':'middle',fill:'#8495a0','font-size':'12'});t.textContent=s[i].year}
  }
-function renderDetail(year){selectedYear=year;const r=get(),row=r.deterministic_annual_ledger.rows.find(q=>q.year===year);if(!row)return;
+function renderDetail(year){try{renderDetailChecked(year)}catch(error){failReport()}}
+function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.deterministic_annual_ledger.rows.find(q=>q.year===year);if(!row)return;
  text('year-heading',`${year} 年度逐项审计`);
  const okay=row.unmet_spending===0&&row.unpaid_tax===0&&row.unmet_rmd===0&&row.skipped_conversions.length===0&&row.reconciliation_residual===0;
  text('year-status',okay?'对账通过':'出现资金/规则缺口');$('year-status').className=okay?'pill':'pill warn';
@@ -87,7 +110,8 @@ function renderDetail(year){selectedYear=year;const r=get(),row=r.deterministic_
  $('year-select').value=String(year);
  }
 function renderCashflow(r){const body=$('cashflow-rows'),select=$('year-select');body.replaceChildren();select.replaceChildren();for(const row of r.deterministic_annual_ledger.rows){const tr=document.createElement('tr');tr.dataset.year=row.year;const vals=[String(row.year),fmt(row.wages_gross),fmt(row.pretax_contributions),fmt(row.social_security_gross+row.pension_gross),fmt(row.living_expenses_due),fmt(row.tax_due_total),fmt(row.closing_total),fmt(row.unmet_spending+row.unpaid_tax+row.unmet_rmd)];for(const v of vals){let td=document.createElement('td');td.textContent=v;tr.append(td)}tr.addEventListener('click',()=>renderDetail(row.year));body.append(tr);const opt=document.createElement('option');opt.value=row.year;opt.textContent=row.year;select.append(opt)}select.onchange=()=>renderDetail(Number(select.value));renderDetail(selectedYear??r.deterministic_annual_ledger.rows[0].year)}
-function render(){const r=get(),yr=r.deterministic_annual_ledger.rows;
+function render(){try{renderChecked()}catch(error){failReport()}}
+function renderChecked(){const r=get(),yr=r.deterministic_annual_ledger.rows;
  renderScenarios();text('metric-success',pct(r.modeled_all_obligations_funded_fraction));text('metric-ci',`95% 抽样区间 ${pct(r.mc_sampling_wilson95[0])}–${pct(r.mc_sampling_wilson95[1])}`);
  text('metric-median',fmt(r.terminal_real_p10_p50_p90[1]));text('metric-tax',fmt(yr[0].tax.federal_income_tax));text('metric-first',r.deterministic_annual_ledger.first_failure_year||'未发生');
  text('sampling-note',`${r.trials} 条模拟路径；置信区间只反映随机抽样误差。`);
@@ -109,7 +133,8 @@ $('download-json').onclick=()=>save('financial-audit.json',JSON.stringify({plan:
 $('download-plan').onclick=()=>save('financial-plan.json',JSON.stringify(data.plans[active],null,2),'application/json');
 $('download-csv').onclick=()=>{const rows=get().deterministic_annual_ledger.rows;const fields=['year','opening_total','investment_growth_total','wages_gross','pretax_contributions','social_security_gross','pension_gross','living_expenses_paid','tax_due_total','tax_paid','unpaid_tax','closing_total','reconciliation_residual'];save('financial-audit-ledger.csv',fields.join(',')+'\n'+rows.map(r=>fields.map(k=>r[k]).join(',')).join('\n')+'\n','text/csv')};
 $('print').onclick=()=>window.print();
-render();window.__financialAudit={getActive:()=>active,getYear:()=>selectedYear,getReport:()=>get()};
+window.__financialAudit={getActive:()=>active,getYear:()=>selectedYear,getReport:()=>get()};render();
+}
 </script>
 </body>
 </html>
