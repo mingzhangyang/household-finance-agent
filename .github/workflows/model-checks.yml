@@ -17,5 +17,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Reproduce complete offline financial audit
-        run: sh scripts/verify_local.sh
+      - name: Collect supervised offline evidence (including full audit)
+        env:
+          HFA_REQUIRE_SUPERVISION: '1'
+        run: python scripts/collect_evidence.py --output "$RUNNER_TEMP/finance-evidence"
+      - name: Preserve fictional-fixture evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-evidence
+          path: ${{ runner.temp }}/finance-evidence
+          if-no-files-found: error

@@ -9,10 +9,9 @@ import hashlib
 import json
 import os
 import platform
-import signal
-import time
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,58 +26,21 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def group_exists(pgid):
-    # Use the same process namespace as Popen/killpg. A mounted /proc may
-    # expose different PID/group IDs inside containers or sandbox runtimes.
-    # Treat even an unreaped zombie conservatively: no manifest until the
-    # group disappears, rather than risk overlooking a live writer.
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
-def stop_group(process):
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait()
-    deadline = time.monotonic() + 5
-    while group_exists(process.pid):
-        if time.monotonic() >= deadline:
-            # Fail closed: never publish hashes if writers may still be alive.
-            raise RuntimeError('Command descendants did not stop; evidence not collected')
-        time.sleep(.01)
-
-
 def run_command(command, log, env, timeout=300):
-    with log.open('w') as stream:
-        try:
-            process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=stream,
-                stderr=subprocess.STDOUT, start_new_session=True)
-        except OSError as exc:
-            stream.write(str(exc)+'\n')
-            return -1
-        try:
-            code = process.wait(timeout=timeout)
-            # A successful parent exit does not prove its background work is
-            # finished. Settle the entire group before logs/artifacts can be
-            # hashed, and never report a command needing cleanup as passed.
-            if group_exists(process.pid):
-                stop_group(process)
-                stream.write(f'Command exited {code} with live background descendants; '
-                             'process group stopped; command failed.\n')
-                return -1
-            return code
-        except subprocess.TimeoutExpired as exc:
-            stop_group(process)
-            stream.write(str(exc)+'\n')
-            return -1
-        except BaseException:
-            stop_group(process)
-            raise
+    # The private supervisor owns timeout/cleanup. An abnormal supervisor exit
+    # or missing receipt aborts main before any artifact manifest is published.
+    with tempfile.TemporaryDirectory(prefix='finance-command-') as temp:
+        receipt = Path(temp)/'settled.json'
+        with log.open('w') as stream:
+            result = subprocess.run([sys.executable, str(ROOT/'scripts/evidence_process.py'),
+                '--receipt', str(receipt), '--timeout', str(timeout), '--', *command],
+                cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT)
+        if result.returncode != 0 or not receipt.is_file():
+            raise RuntimeError('Command supervision unconfirmed; evidence collection aborted; see '+str(log))
+        status = json.loads(receipt.read_text())
+        if status.get('settled') is not True or type(status.get('exit_code')) is not int:
+            raise RuntimeError('Invalid command supervision receipt; evidence collection aborted')
+        return status['exit_code']
 
 
 def main():

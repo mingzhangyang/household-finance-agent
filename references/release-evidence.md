@@ -6,7 +6,8 @@ open. Never convert “not run”, skipped or environment-blocked checks to pass
 
 ## Collect evidence at an exact commit
 
-Use a clean POSIX checkout with process-group support, Python 3.10+ and Node.js. The collector has no user-input-file
+Use a clean Linux checkout with subreaper support and /proc mounted in the same
+PID namespace, Python 3.10+ and Node.js. The collector has no user-input-file
 option: only the checked-in fictional household is used. Choose a **new** local
 folder outside the checkout, or under ignored `results/`:
 
@@ -24,14 +25,26 @@ for development, but `exact_clean_commit=false` prevents it being presented as
 commit-level evidence. `release_approved` is always false: engineering checks cannot
 supply missing scope decisions or independent professional sign-off.
 
-Commands run in isolated process groups. On timeout, or when a normal/nonzero
-parent exit leaves live background descendants, the collector kills the whole
-group and waits until the process group disappears before closing logs or hashing
-artifacts. Any command requiring descendant cleanup is recorded as failed, even
-if its direct process exited zero. Process-group existence is checked through the OS signal API, avoiding PID
-namespace mismatches with mounted /proc. Unreaped zombies are treated
-conservatively and may cause cleanup to fail rather than publish uncertain hashes. If cleanup cannot
-be verified, collection aborts without publishing a manifest.
+Each command runs under its own single-threaded Linux child subreaper. Orphaned
+children are adopted even after setsid/double-fork detachment. On timeout or
+parent exit, the supervisor stops and reaps remaining descendants; needing cleanup
+marks the command failed, including a zero parent exit. /proc lists candidates to
+stop, but only waitpid reporting no children confirms completion. An empty /proc
+snapshot alone cannot authorize hashes. See the Linux documentation for
+[PR_SET_CHILD_SUBREAPER](https://man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html)
+and [waitpid](https://man7.org/linux/man-pages/man2/waitpid.2.html).
+
+The collector requires a completion receipt from the supervisor before continuing.
+Unsupported supervision, mismatched PID namespaces, an abnormal supervisor exit,
+or unconfirmed cleanup aborts collection without publishing a manifest. This is
+supervision for trusted repository commands, not isolation for hostile code or
+work delegated to external services. The supervisor runs separately so unrelated
+children of the caller are never adopted or killed.
+
+Native Linux CI requires the supervision regressions (no environment skip), runs
+the full evidence collector, and preserves its fictional-fixture bundle as a
+workflow artifact. Restricted local environments may skip the native tests with
+an explicit reason, but cannot collect a successful evidence manifest.
 
 Without `--browser`, the browser status is `not_run`. With the flag, missing Node,
 Playwright or browser binaries are failures, not silent skips. GitHub Actions is
