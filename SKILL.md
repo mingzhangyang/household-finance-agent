@@ -65,3 +65,13 @@ For the default visual report, `render_audit.py` creates four independently prec
 ## Legacy compatibility — not professional-grade
 
 `plan.py`, `render_dashboard.py`, `dashboard-template.html`, `examples/sample-household.json`, `references/data-contract.md` and `references/interactive-dashboard.md` are retained **only for comparison with the older demonstration**. The v1 illustrative flat-effective-rate engine is explicitly disallowed as the default for finance decision support. Do not treat historical v1 percentages (57.2% and 35.8%) as comparable to the fictional v2 scenario results, which use different household data and economic inputs.
+## Experimental professional reference components (feature branch)
+
+Use these only for scoped independent checks, NEVER silently inject their outputs into `audit_plan.py`:
+
+- `scripts/tax_extensions.py`: IRS 2026 NIIT on independently documented MAGI/net-investment income, not yet integrated into the cash-funding solver.
+- `scripts/social_security.py`: official 2026/2027 eligibility-year PIA bend points, FRA and worker claiming factors; AIME and COLA-adjusted PIA remain external inputs, no spousal/survivor calculations. See `references/ssa-methodology.md`.
+- `scripts/lifecycle.py`: explicit deterministic death-year, spending and total survivor-household SSA assumption schedule; no mortality rates or post-death tax modeling.
+- `scripts/market_history.py`: reads sourced stock/bond annual return CSV, computes sample moments and rolling historical funding windows; a 19-year, two-decimal example is a smoke fixture, not professional market calibration. See `references/market-data-provenance.md`.
+
+When the user asks for a decision-grade retirement outcome, first consult `references/professional-validation-gates.md`; report **not validated** while integration, external benchmarking and audited historical source data remain incomplete. Never cite an optional reference module as evidence the main projection has incorporated it.
