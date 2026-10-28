@@ -16,8 +16,9 @@ import sys
 from pathlib import Path
 from datetime import date
 from tax2026 import federal_tax, payroll_tax, CONTRIB_401K_LIMIT, SOURCES
+from tax_extensions import net_investment_income_tax, SOURCE as NIIT_SOURCE
 
-RULESET = 'US_FEDERAL_2026_RESTRICTED_v2.1'
+RULESET = 'US_FEDERAL_2026_RESTRICTED_v2.2'
 KINDS = {'cash','taxable','traditional_ira','traditional_401k','roth_ira'}
 RMD_DENOMINATORS = {
     72:27.4,73:26.5,74:25.5,75:24.6,76:23.7,77:22.9,78:22.0,79:21.1,
@@ -241,7 +242,20 @@ def _tax_calc(p,year,retail,wages_by_person,wage_taxable,pension,ss,interest,rmd
             bracket_inflation=p['tax_policy']['future_bracket_inflation'])
     payroll=payroll_tax(wages_by_person,p['tax_policy']['filing_status'],
                        wage_base_multiplier=(1+p['tax_policy']['future_bracket_inflation'])**max(0,year-2027),year=year)
-    return fed,payroll, fed['federal_income_tax']+payroll['total']
+    # No foreign income exclusion, separate investment deductions or passive revenue
+    # are supported. In this restricted scope, MAGI equals AGI and modeled NII
+    # consists only of cash interest and realized positive long-term gains.
+    niit=net_investment_income_tax(modified_agi=fed['adjusted_gross_income'],
+        net_investment_income=interest+gain,filing_status=p['tax_policy']['filing_status'],tax_year=year)
+    fed['niit_magi_assumed_equal_agi']=niit['modified_agi']
+    fed['niit_net_investment_income']=niit['net_investment_income']
+    fed['niit_threshold']=niit['threshold']
+    fed['niit_tax_base']=niit['niit_tax_base']
+    fed['niit_rate']=niit['niit_rate']
+    fed['niit_due']=niit['niit_due']
+    fed['total_federal_income_and_niit']=fed['federal_income_tax']+niit['niit_due']
+    fed['unmodeled']=[item for item in fed['unmodeled'] if item!='NIIT']
+    return fed,payroll, fed['total_federal_income_and_niit']+payroll['total']
 
 
 def run_path(p, annual_portfolio_returns, verify=True):
@@ -389,6 +403,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
             'wages_gross':round(sum(wages_by_person),2),'wages_taxable':round(wage_taxable,2),
             'pretax_contributions':round(sum(contribs.values()),2),
             'pretax_contribution_by_account':{k:round(v,2) for k,v in contribs.items()},
+            'cash_account_id':cash_id,
             'social_security_gross':round(ss,2),'pension_gross':round(pension,2),
             'other_after_tax_income':round(ev_in,2),'living_expenses_due':round(living,2),
             'living_expenses_paid':round(spending_paid,2),'unmet_spending':round(unmet_spend,2),
@@ -396,7 +411,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
             'roth_converted':round(converted,2),'conversion_transfers':conversion_transfers,'skipped_conversions':skipped,
             'extra_draws':{k:round(v,2) for k,v in draws.items()},
             'realized_ltcg':round(gain,2),'ira_extra_taxable':round(ira_extra,2),
-            'tax':{k:(round(v,8) if k=='rule_multiplier' else round(v,2) if isinstance(v,(float,int)) and not isinstance(v,bool)
+            'tax':{k:(round(v,8) if k in ('rule_multiplier','niit_rate') else round(v,2) if isinstance(v,(float,int)) and not isinstance(v,bool)
                 else [{j:(round(n,2) if isinstance(n,float) else n) for j,n in line.items()} for line in v] if k in ('ordinary_bracket_lines','capital_gain_rate_lines')
                 else v) for k,v in fed.items()},
             'payroll_tax':{k:([round(x,2) for x in v] if isinstance(v,list) else round(v,2)) for k,v in payroll.items()},
@@ -408,7 +423,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
             'reconciliation_residual':round(residual,6),
             'account_reconciliation_residuals':{k:round(v,6) for k,v in account_residuals.items()},
             'source_ids':['brackets_standard_senior','capital_gains','social_security_tax','payroll',
-                          'payroll_2027','senior_enhanced','additional_medicare',
+                          'payroll_2027','senior_enhanced','additional_medicare','niit',
                           '401k_elective_limit_2026','rmd_uniform_lifetime','rmd_birth_1959'],
             'account_flows':{aid:{'contribution':contribs.get(aid,0.),
                 'required_distribution':sum(d['taken'] for d in rmd_detail if d['account']==aid),
@@ -481,9 +496,10 @@ def evaluate(p):
             'p50':q_from(vals,.5),'p90':q_from(vals,.9),
             'paths_funded_to_date':annual_funded[j]} for j,vals in enumerate(annual_quantiles)]
     engine_source_hash=hashlib.sha256((Path(__file__).read_bytes()+
-                           (Path(__file__).parent/'tax2026.py').read_bytes())).hexdigest()
+                           (Path(__file__).parent/'tax2026.py').read_bytes()+
+                           (Path(__file__).parent/'tax_extensions.py').read_bytes())).hexdigest()
     return {
-        'engine_version':'2.1-auditable-restricted','policy':RULESET,'input_sha256':plan_sha,
+        'engine_version':'2.2-auditable-restricted','policy':RULESET,'input_sha256':plan_sha,
         'input_provenance':p.get('input_provenance',{'mode':'not_provided','register':[]}),
         'engine_source_sha256':engine_source_hash,
         'scenario':p['name'],'opening_balance_status':p['opening_balance_status'],'tax_policy':p['tax_policy'],'year_range':[p['as_of_year']+1,p['end_year']],
@@ -493,11 +509,12 @@ def evaluate(p):
         'funded_and_target_fraction':round(target_success/a['trials'],5),
         'terminal_real_p10_p50_p90':[quant(.1),quant(.5),quant(.9)],
         'annual_real_percentiles':bands,'simulated_path_manifest':path_manifest,
-        'deterministic_annual_ledger':deterministic,'rules_sources':SOURCES,
+        'deterministic_annual_ledger':deterministic,'rules_sources':{**SOURCES,'niit':NIIT_SOURCE},
         'rule_scope':[
             '2026 federal reference tables projected forward at an ASSUMED bracket inflation; not future legislation.',
             '2026 federal progressive ordinary tax, simplified Social Security taxation, standard/senior deductions, long-term gains, FICA (2027 SSA wage base actual), and selected RMDs modeled.',
-            'No state tax, NIIT, AMT, itemization, tax credits, IRMAA/ACA, inherited accounts, income limits, QCD or employer matching.',
+            '2026 NIIT on modeled cash interest and positive realized long-term gains; MAGI assumes no foreign exclusions; thresholds unindexed.',
+            'No state tax, AMT, itemization, tax credits, IRMAA/ACA, inherited accounts, income limits, QCD or employer matching.',
             'Taxable sales use average proportional basis and assume all positive gains long-term; no harvested loss offsets or lot selection.',
             'Social Security benefit amount is supplied for the selected claiming age, with flat assumed COLA; no SSA earnings record, spouse or survivor optimization.',
             'No mortality, divorce, changes of filing status, half-year ages, early distribution penalties/exceptions, Social Security earnings test, or Roth qualification verification.',
@@ -526,7 +543,7 @@ def main():
                 raise ModelError('trace path index must be between zero and trials-1')
             path=next(path for i,path in enumerate(_market_paths(plans[0])) if i==index)
             ledger=run_path(plans[0],path,verify=True)
-            output={'engine_version':'2.1-auditable-restricted','trial_index':index,
+            output={'engine_version':'2.2-auditable-restricted','trial_index':index,
                     'input_sha256':hashlib.sha256(json.dumps(plans[0],ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
                     'annual_returns':path,'path_ledger':ledger}
         elif args.command=='compare':
