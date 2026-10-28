@@ -2,6 +2,10 @@
 
 An installable ChatGPT Skill with an original interactive, offline financial planning report. **The v2.2 engine deliberately restricts supported tax and investment scenarios** to provide transparent, independently checkable calculations instead of broad but unverifiable claims.
 
+## Canonical offline verification (free, no Actions quota)
+
+Run `sh scripts/verify_local.sh` from the repo. It checks syntax, all tracked Python tests, the 40-year fictional projection, 300 market paths, independent output verification, the historical return fixture and offline HTML generation. This does **not** mean external tax/SSA certification or complete model calibration. GitHub Actions may be unavailable because the owner's quota is exhausted; do not repeatedly retry billing-blocked jobs. Keep the PR in Draft until exact-head review is complete.
+
 ## Quick start
 
 ```bash
