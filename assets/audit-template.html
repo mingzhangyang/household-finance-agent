@@ -67,7 +67,7 @@ function renderChart(r){const svg=$('asset-chart');svg.replaceChildren();
  }
 function renderDetail(year){selectedYear=year;const r=get(),row=r.deterministic_annual_ledger.rows.find(q=>q.year===year);if(!row)return;
  text('year-heading',`${year} 年度逐项审计`);
- const okay=row.unmet_spending<.01&&row.unpaid_tax<.01&&row.unmet_rmd<.01&&row.skipped_conversions.length===0&&row.reconciliation_residual===0;
+ const okay=row.unmet_spending===0&&row.unpaid_tax===0&&row.unmet_rmd===0&&row.skipped_conversions.length===0&&row.reconciliation_residual===0;
  text('year-status',okay?'对账通过':'出现资金/规则缺口');$('year-status').className=okay?'pill':'pill warn';
  const details=[['期初全部账户',row.opening_total],['工资总额',row.wages_gross],['其中税前401(k)缴款（内部划转）',row.pretax_contributions],['社保金总额',row.social_security_gross],['退休金总额',row.pension_gross],['其他净收入',row.other_after_tax_income],['投资及现金收益',row.investment_growth_total],['应付生活开销',row.living_expenses_due],['实际生活支出',row.living_expenses_paid],['RMD（IRA/401k 转现金）',row.rmd_total],['Roth 转换（内部划转）',row.roth_converted],['已付联邦及工资税',row.tax_paid],['未支付税款',row.unpaid_tax],['未满足支出',row.unmet_spending],['期末全部账户',row.closing_total]];
  const inc=$('income-details');inc.replaceChildren();details.forEach(([name,num])=>inc.append(...numeric(name,num)));

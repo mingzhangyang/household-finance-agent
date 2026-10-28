@@ -8,6 +8,7 @@ Arithmetic consistency is not a tax-law certification or market calibration.
 import argparse
 import hashlib
 import json
+from math import isfinite
 from pathlib import Path
 
 class VerifyFailure(ValueError):
@@ -28,6 +29,10 @@ def verify(x,plan=None,engine_dir=None):
     if x.get('engine_version')!='2.2-auditable-restricted':
         raise VerifyFailure('unexpected or unaudited engine')
     count=x['trials']
+    if type(count) is not int or count<=0:
+        raise VerifyFailure('MC trial count must be a positive integer')
+    if plan is not None and count!=plan['assumptions']['trials']:
+        raise VerifyFailure('MC trial count mismatched to plan')
     manifest=x['simulated_path_manifest']
     if count!=len(manifest):
         raise VerifyFailure('missing Monte Carlo paths')
@@ -57,10 +62,17 @@ def verify(x,plan=None,engine_dir=None):
         previous_total=ledger[0]['opening_total']
     if len(ledger)!=last_year-first_year+1:
         raise VerifyFailure('year count mismatched to range')
+    failure_years=[]
     for index,row in enumerate(ledger):
         y=row['year']
         if y!=first_year+index:
             raise VerifyFailure('ledger years must be consecutive and ordered')
+        shortfalls=[row[field] for field in ('unmet_spending','unpaid_tax','unmet_rmd')]
+        if any(type(value) not in (int,float) or not isfinite(value) or value<0
+               or value!=round(value,2) for value in shortfalls):
+            raise VerifyFailure(f'{y}: shortfalls must be nonnegative whole-cent amounts')
+        if any(value>0 for value in shortfalls) or row['skipped_conversions']:
+            failure_years.append(y)
         for field in ('opening_accounts','closing_accounts','growth_by_account',
                       'account_flows','account_reconciliation_residuals'):
             if set(row[field])!=set(previous_accounts):
@@ -89,11 +101,19 @@ def verify(x,plan=None,engine_dir=None):
         close(pf['total'],pf['social_security_tax']+pf['medicare_tax']+pf['additional_medicare_tax'],f'{y}: payroll tax')
         # Independent recomputation of statutory reference NIIT; no tax engine import.
         tax=row['tax']
+        cash_interest=row['growth_by_account'][row['cash_account_id']]
+        close(row['wages_taxable'],row['wages_gross']-row['pretax_contributions'],f'{y}: taxable wages')
+        ordinary=(row['wages_taxable']+row['pension_gross']+row['rmd_total']+
+                  row['ira_extra_taxable']+row['roth_converted']+cash_interest+
+                  tax['taxable_social_security'])
+        agi=ordinary+row['realized_ltcg']
+        close(tax['gross_ordinary'],ordinary,f'{y}: ordinary income components')
+        close(tax['adjusted_gross_income'],agi,f'{y}: AGI income components')
         if tax['niit_rate'] != .038:
             raise VerifyFailure(f'{y}: NIIT rate changed')
         if tax['niit_threshold'] != (250000. if x['tax_policy']['filing_status']=='mfj' else 200000.):
             raise VerifyFailure(f'{y}: NIIT threshold changed')
-        close(tax['niit_magi_assumed_equal_agi'],tax['adjusted_gross_income'],f'{y}: NIIT MAGI')
+        close(tax['niit_magi_assumed_equal_agi'],agi,f'{y}: NIIT MAGI income components')
         close(tax['niit_net_investment_income'],row['realized_ltcg']+row['growth_by_account'][row['cash_account_id']],f'{y}: NIIT income')
         close(tax['niit_tax_base'],min(tax['niit_net_investment_income'],max(0.,tax['adjusted_gross_income']-tax['niit_threshold'])),f'{y}: NIIT base')
         close(tax['niit_due'],tax['niit_tax_base']*.038,f'{y}: NIIT due')
@@ -114,9 +134,16 @@ def verify(x,plan=None,engine_dir=None):
             close(row['account_reconciliation_residuals'][aid],0,f'{y}: {aid} residual',.01)
             checks+=2
             max_residual=max(max_residual,abs(row['closing_accounts'][aid]-expected))
-        checks+=17+len(row['rmd'])*2
+        checks+=21+len(row['rmd'])*2
         previous_accounts=row['closing_accounts']
         previous_total=row['closing_total']
+    summary=x['deterministic_annual_ledger']
+    if type(summary['failed']) is not bool or summary['failed']!=bool(failure_years):
+        raise VerifyFailure('deterministic failed summary disagrees with annual rows')
+    first_failure=failure_years[0] if failure_years else None
+    if summary['first_failure_year']!=first_failure:
+        raise VerifyFailure('deterministic first failure year disagrees with annual rows')
+    checks+=2
     if plan is not None:
         raw=json.dumps(plan,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
         if x['input_sha256']!=hashlib.sha256(raw).hexdigest():

@@ -392,7 +392,10 @@ def run_path(p, annual_portfolio_returns, verify=True):
         account_residuals={k:bal[k]-acct_delta[k] for k in bal}
         if verify and (abs(residual)>.01 or any(abs(v)>.01 for v in account_residuals.values())):
             raise ModelError(f'{year}: double-entry conservation failure ${residual:,.5f}, {account_residuals}')
-        if unmet_spend>.001 or unpaid_tax>.001 or rmd_unmet>.001 or skipped:
+        # Funded status uses the same cent-rounded shortfalls as the exported
+        # ledger: any displayed cent is a failure; sub-cent amounts rounding
+        # to zero are ignored. Skipped conversions always fail, at any amount.
+        if any(round(value,2)>0 for value in (unmet_spend,unpaid_tax,rmd_unmet)) or skipped:
             fail_years.append(year)
         if blocks: notices.append({'year':year,'blocks':blocks})
         rows.append({'year':year,'age_primary':year-p['members'][0]['birth_year'],

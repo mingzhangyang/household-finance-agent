@@ -14,7 +14,7 @@ For year `t`:
 3. Calculate RMD from *prior-year-end* fully pretax balance and the owner age's Uniform Lifetime Table divisor. Treat RMD as internal account-to-cash transfer and ordinary taxable income.
 4. Apply scheduled same-owner traditional IRA -> Roth conversions as internal transfers and as **ordinary taxable income**. Do not allow RMD to count toward the conversion amount.
 5. Iteratively solve for withdrawals to meet household expenditure **plus** resulting federal income tax, NIIT and payroll tax. Treat positive proportional long-term gains on taxable account sales as preferential gains; pretax IRA/401k sales as ordinary income. Block penalty-sensitive under-age-60 withdrawals rather than assume exceptions.
-6. Set tax paid and spending paid to actual available cash; expose unpaid tax and unmet spending as **failure conditions** rather than suppressing them.
+6. Set tax paid and spending paid to actual available cash. For funded status, round unpaid tax, unmet spending and unmet RMD to cents using Python's `round(amount, 2)`, exactly as exported in the ledger. Any positive rounded amount fails the year; sub-cent amounts rounding to zero do not. Any skipped requested conversion fails regardless of its amount. The engine, output verifier and report use this same policy; arithmetic conservation still uses unrounded amounts.
 7. Verify the household equation and each account's complete journal entry, including deposits, RMD, conversion, optional draws, cash receipts and cash tax/spending. Raising an exception on mismatch > $0.01.
 
 Whole-household balance equation:
@@ -28,6 +28,8 @@ Whole-household balance equation:
 For each year draw two independent standard normals `z1,z2`. Set hypothetical stock `R_e=mu_e+sigma_e*z1`; bond `R_b=mu_b+sigma_b*(rho*z1+sqrt(1-rho^2)*z2)`; blended return `R=equity_weight*R_e+(1-equity_weight)*R_b-fee`, floored at -99.9%. `random.Random(seed)` and fixed trial count permit exact replay. Path `i` succeeds iff there are no years with unpaid taxes, unmet living expenses, unmet RMDs or skipped requested conversions. Wilson 95% interval describes random sample error ONLY, not uncertainty in the market assumptions.
 
 Every saved report contains `simulated_path_manifest` of `{path_index, funded, first_failure_year, terminal_real}` for all paths. The saved seed and `trace --path-index i` reconstruct all annual flows for any selected path. Percentiles are linear interpolations of sorted terminal **inflation-adjusted** balances. The display has P10/P50/P90 yearly marginal bands, which are **not** percentile trajectories of the same individual path.
+
+With a plan supplied, independent verification requires the manifest's trial count to equal `assumptions.trials`. It derives deterministic `failed` and `first_failure_year` from annual cent-rounded shortfalls and skipped conversions. Restricted AGI is recomposed from taxable wages, pension, required and extra pretax distributions, Roth conversions, cash interest, taxable Social Security and realized LTCG; both reported AGI and NIIT MAGI must match this sum. Net-after-tax event income and gross Social Security are not substituted for taxable income. These checks establish output consistency, not an independent reconstruction of tax law or every Monte Carlo path; use `trace` to replay individual paths.
 
 ## Independent test protocol
 
