@@ -24,11 +24,19 @@ EXACT_NUMERIC = {'year', 'age', 'divisor', 'first_failure_year',
 EXACT_MAPS = {'opening_accounts', 'closing_accounts', 'extra_draws', 'taxable_basis_end'}
 
 
+def reference_json(value):
+    """Preserve exact Decimal spelling even in missing compound references."""
+    if isinstance(value,Decimal): return str(value)
+    if isinstance(value,dict): return {key:reference_json(item) for key,item in value.items()}
+    if isinstance(value,list): return [reference_json(item) for item in value]
+    return value
+
+
 def compare(actual, expected, path='$'):
     """Each reference leaf is checked, including shape for account/draw maps."""
     checks=[]
     def check(where, want, got, passed, difference=None, tolerance=None):
-        checks.append(dict(field=where,expected=str(want) if isinstance(want,Decimal) else want,
+        checks.append(dict(field=where,expected=reference_json(want),
                            actual=got,passed=passed,difference=difference,tolerance=tolerance))
     def visit(got,want,where):
         key=where.rsplit('.',1)[-1]
