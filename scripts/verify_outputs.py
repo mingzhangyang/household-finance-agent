@@ -51,6 +51,8 @@ FLOW_KEYS={'contribution','required_distribution','roth_conversion_out','roth_co
            'optional_draw','cash_external_inflow','cash_tax_and_spending_outflow',
            'cash_received_rmd','cash_received_draws'}
 CASH_ONLY_FLOWS=('cash_external_inflow','cash_tax_and_spending_outflow','cash_received_rmd','cash_received_draws')
+# Documented funding-notice text (output-contract.md): one message per blocked account.
+BLOCK_NOTICE='{}: early distributions before 60 not modeled'
 
 class VerifyFailure(ValueError):
     pass
@@ -520,14 +522,21 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
         close(tax['niit_due'],tax['niit_tax_base']*.038,f'{y}: NIIT due')
         close(tax['total_federal_income_and_niit'],tax['federal_income_tax']+tax['niit_due'],f'{y}: federal/NIIT')
         close(row['tax_due_total'],tax['total_federal_income_and_niit']+pf['total'],f'{y}: total due')
-        close(row['tax_paid']+row['unpaid_tax'],row['tax_due_total'],f'{y}: unpaid tax')
-        close(row['living_expenses_paid']+row['unmet_spending'],row['living_expenses_due'],f'{y}: unmet living')
+        # These sums gate the failure flag: each side is cent-rounded from an exact
+        # unrounded identity, so they can differ by one cent, not five.
+        close(row['tax_paid']+row['unpaid_tax'],row['tax_due_total'],f'{y}: unpaid tax',
+              .0101+1e-12*abs(row['tax_due_total']))
+        close(row['living_expenses_paid']+row['unmet_spending'],row['living_expenses_due'],f'{y}: unmet living',
+              .0101+1e-12*abs(row['living_expenses_due']))
         close(row['tax']['long_term_gain_taxable'],sum(z['taxable'] for z in row['tax']['capital_gain_rate_lines']),f'{y}: LTCG bands')
         for item in row['rmd']:
             if item['account'] not in row['opening_accounts']:
                 raise VerifyFailure(f'{y}: unknown RMD account')
             close(item['previous_dec31_balance'],row['opening_accounts'][item['account']],f'{y}: RMD opening balance',.01)
-            close(item['required'],item['previous_dec31_balance']/item['divisor'],f'{y}: RMD {item["account"]}')
+            # Unrounded prior balance over the divisor: the engine's quotient is exact.
+            required=item['previous_dec31_balance']/item['divisor']
+            close(item['required'],required,f'{y}: {item["account"]} RMD required as prior balance over divisor',
+                  1e-9+1e-12*abs(required))
             close(item['taken']+item['unmet'],item['required'],f'{y}: RMD fulfillment')
         close(row['rmd_total'],round(sum(item['taken'] for item in row['rmd']),2),f'{y}: RMD taken aggregate',1e-8)
         close(row['unmet_rmd'],round(sum(item['unmet'] for item in row['rmd']),2),f'{y}: RMD unmet aggregate',1e-8)
@@ -675,9 +684,10 @@ def _journal_checks(row,previous_basis,expect):
             slack+=draw
             continue
         # Propagate the cent rounding of prior basis (0.005) and of value at sale
-        # (opening + growth, 0.01): d(used) = (draw/value) dB + (draw*B/value^2) dV.
+        # (opening + growth, 0.01) over the whole interval, not the tangent:
+        # |d(used)| <= (draw/value) dB + draw*(B+0.005)*0.01/(value*(value-0.01)).
         used=draw*prior/value
-        value_error=draw*prior*.0100001/(value*value)
+        value_error=draw*(prior+.0050001)*.0100001/(value*(value-.0100001))
         expect(basis[aid],max(0.,prior-used),f'{y}: {aid} proportional basis after sale',
                .0051+.0050001*abs(1-draw/value)+value_error+1e-12*prior)
         gains+=max(0.,draw-used)
@@ -869,9 +879,11 @@ def _plan_checks(row,plan,path_return,blocks,expect):
             raise VerifyFailure(f'{y}: {aid} drawn before its owner reached age 60')
     expect(row['ira_extra_taxable'],sum(flows[aid]['optional_draw'] for aid,a in accounts.items() if a['kind'] in PRETAX_KINDS),
            f'{y}: pretax draws taxed as ordinary income',.0051)
+    # Whole messages, not ID prefixes: IDs may contain ':' ('ira:spouse: ...' starts with 'ira:').
+    notice={aid:BLOCK_NOTICE.format(aid) for aid in blocked}
     for block in blocks:
-        if not any(block.startswith(aid+':') for aid in blocked):
-            raise VerifyFailure(f'{y}: funding notice names an account that was not blocked')
+        if block not in notice.values():
+            raise VerifyFailure(f'{y}: funding notice {block!r} is not the message for a blocked account')
     order=[aid for aid in plan['withdrawal_order'] if accounts[aid]['kind']!='cash']
     shortfall=row['unmet_spending']>0 or row['unpaid_tax']>0
     for position,aid in enumerate(order):
@@ -879,7 +891,7 @@ def _plan_checks(row,plan,path_return,blocks,expect):
         if not (shortfall or later_draw):
             continue
         if aid in blocked:
-            if not any(block.startswith(aid+':') for block in blocks):
+            if notice[aid] not in blocks:
                 raise VerifyFailure(f'{y}: blocked account {aid} missing from funding notices')
         elif closing[aid]>.01:
             if later_draw:

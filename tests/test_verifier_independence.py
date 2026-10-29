@@ -161,6 +161,34 @@ class OutputOnlyJournalForgeries(unittest.TestCase):
                 with self.assertRaisesRegex(VerifyFailure,'ira unmet RMD as required less taken'):
                     verify(result,supplied)
 
+    def test_fake_cent_spending_shortfall_when_cash_is_exhausted(self):
+        # The draw empties the brokerage exactly, so cash and accessible accounts
+        # end at zero; a four-cent unmet amount would fail a funded year.
+        plan=household(birth=1956,brokerage=5000,living=5000)
+        result=audit_plan.evaluate(plan)
+        row=first_row(result)
+        self.assertEqual((row['unmet_spending'],row['closing_total']),(0,0))
+        row['unmet_spending']=.04
+        result['deterministic_annual_ledger'].update(failed=True,first_failure_year=2027)
+        for supplied in (None,plan):
+            with self.subTest(plan=supplied is not None):
+                with self.assertRaisesRegex(VerifyFailure,'unmet living'):
+                    verify(result,supplied)
+
+    def test_fake_rmd_requirement_on_an_empty_account(self):
+        # The requirement is the prior balance over the divisor: zero here, not 0.04.
+        plan=household(birth=1954,cash=50000,ira=0,living=1000)
+        result=audit_plan.evaluate(plan)
+        row=first_row(result)
+        self.assertEqual((row['rmd'][0]['required'],row['rmd'][0]['taken']),(0,0))
+        row['rmd'][0].update(required=.04,unmet=.04)
+        row['unmet_rmd']=.04
+        result['deterministic_annual_ledger'].update(failed=True,first_failure_year=2027)
+        for supplied in (None,plan):
+            with self.subTest(plan=supplied is not None):
+                with self.assertRaisesRegex(VerifyFailure,'ira RMD required as prior balance over divisor'):
+                    verify(result,supplied)
+
     def test_understated_rmd_hidden_by_a_draw_that_empties_the_account(self):
         # The IRA is drawn to zero, so an empty closing balance cannot show
         # whether the RMD was fundable. Move 400 of the RMD into the draw:
@@ -214,6 +242,19 @@ class OutputOnlyJournalForgeries(unittest.TestCase):
                 else:
                     with self.assertRaisesRegex(VerifyFailure,'proportional basis after sale'):
                         verify(result,supplied)
+
+    def test_small_balance_sales_near_the_rounding_cutoff(self):
+        # 0.0250001 growing 20% is reported as 0.03 + 0.01 = 0.04 against a true
+        # 0.0300001, so the basis ratio needs the whole cent-rounding interval.
+        for living,sale,basis_end in ((.015,'partial',.5),(1,'full',0)):
+            plan=household(birth=1956,brokerage=.0250001,basis=1,living=living)
+            plan['assumptions'].update(equity_weight=1,equity_mean=.2)
+            result=audit_plan.evaluate(plan)
+            row=first_row(result)
+            self.assertEqual(row['opening_accounts']['brokerage']+row['growth_by_account']['brokerage'],.04)
+            self.assertEqual(row['taxable_basis_end']['brokerage'],basis_end)
+            with self.subTest(sale=sale):
+                self.assertTrue(verify(result,plan)['passed'])
 
     def test_understated_gain_with_untaxed_consequences(self):
         plan=household(birth=1956,brokerage=100000,basis=50000,living=20000,years=2)
@@ -351,9 +392,25 @@ class PlanScheduleForgeries(unittest.TestCase):
         self.assertTrue(verify(result)['passed'])
         with self.assertRaisesRegex(VerifyFailure,'blocked account ira missing from funding notices'):
             verify(result,plan)
-        plan,result=self.blocked_shortfall()
-        result['deterministic_annual_ledger']['notices'][0]['blocks'].append('brokerage: early distributions before 60 not modeled')
-        with self.assertRaisesRegex(VerifyFailure,'names an account that was not blocked'):
+        for text in ('brokerage: early distributions before 60 not modeled','ira: available'):
+            with self.subTest(notice=text):
+                plan,result=self.blocked_shortfall()
+                result['deterministic_annual_ledger']['notices'][0]['blocks'].append(text)
+                with self.assertRaisesRegex(VerifyFailure,'is not the message for a blocked account'):
+                    verify(result,plan)
+
+    def test_each_notice_names_exactly_one_account(self):
+        # Account IDs may contain ':', so 'ira:spouse: ...' starts with 'ira:'.
+        plan=household(birth=1977,ira=100000,living=5000)
+        plan['accounts'].append(dict(id='ira:spouse',kind='traditional_ira',balance=1000,owner='a',
+                                     rmd_table='uniform',fully_pretax_confirmed=True))
+        plan['withdrawal_order'].append('ira:spouse')
+        result=audit_plan.evaluate(plan)
+        self.assertTrue(verify(result,plan)['passed'])
+        notice=result['deterministic_annual_ledger']['notices'][0]
+        notice['blocks']=[block for block in notice['blocks'] if not block.startswith('ira: ')]
+        self.assertEqual(len(notice['blocks']),2)
+        with self.assertRaisesRegex(VerifyFailure,'blocked account ira missing from funding notices'):
             verify(result,plan)
 
     def conversion_case(self):

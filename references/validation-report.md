@@ -2,6 +2,22 @@
 
 This is a repeatable QA record, not an independent CPA/CFP attestation. Execute the entire test suite and save the generated result and verifier JSON before claiming any count of passing tests. Output in `model_validation_report.md` outside the skill contains the latest complete fixture-specific numbers.
 
+## PR #10 second review round (2026-10-29)
+
+Copilot's second review and a follow-up self-review; local results.
+
+- An RMD requirement must equal the unrounded prior balance over the divisor (an empty
+  IRA could report a 4-cent unmet requirement); the basis rounding bound now holds over
+  the whole cent interval (valid sales from a few-cent balance were rejected); notices
+  must be the exact documented message (an `ira:spouse` notice satisfied the `ira:`
+  prefix); paid plus unpaid tax and spending must match the amount due within one cent
+  instead of five (self-review: a 4-cent fake shortfall passed after an exact draw).
+  The new tests fail on the previous verifier.
+- `sh scripts/verify_local.sh`: **184 tests**; 5,775 verifier assertions on the
+  40-year / 300-path run; traced path 17 passed (5,790 assertions).
+- Seeded sweeps (500 plans, seeds 7, 8, 9): 1,458 valid results and 5,832 traced paths
+  passed; all 47,931 single-field mutations were rejected.
+
 ## PR #10 review fixes (2026-10-29)
 
 Fixes for the four Copilot review findings; local results, not a GitHub Actions run.
