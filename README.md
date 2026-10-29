@@ -18,6 +18,11 @@ closed-form Decimal withdrawal cross-checks and a [verification matrix](referenc
 --plan plan.json` checks exact same-engine reproducibility, including intermediate
 annual percentiles. Neither is full independent model validation.
 
+The third slice adds [commit-level evidence collection and browser acceptance](references/release-evidence.md).
+Run `python scripts/collect_evidence.py --output /tmp/hfa-evidence --browser`
+from a clean checkout with Playwright/Chromium installed. Browser unavailability
+is recorded as failure; omitting `--browser` records `not_run`. Neither is a pass.
+
 ## Canonical offline verification (free, no Actions quota)
 
 Run `sh scripts/verify_local.sh` from the repo. It checks syntax, all tracked Python tests, the 40-year fictional projection, 300 market paths, independent output verification, the historical return fixture and offline HTML generation. This does **not** mean external tax/SSA certification or complete model calibration. GitHub Actions may be unavailable because the owner's quota is exhausted; do not repeatedly retry billing-blocked jobs. Keep the PR in Draft until exact-head review is complete.

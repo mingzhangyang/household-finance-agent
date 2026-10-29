@@ -32,6 +32,9 @@ def render(base,output):
         raise VerifyFailure('independent pre-render verification failed')
     data={'labels':['当前基准','提前退休三年','家庭支出增加 10%','降低收益预期'],
           'plans':plans,'results':results,'verification':verification,
+          # JavaScript loses Python's int/float spelling (143000.0 -> 143000).
+          # Keep the original plan text for hash-preserving download/replay.
+          'plan_json':[json.dumps(p,indent=2,ensure_ascii=False,allow_nan=False) for p in plans],
           'source':'All numbers precomputed by audit_plan.py and checked by verify_outputs.py; no browser tax calculations'}
     raw=json.dumps(data,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     raw=raw.replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')

@@ -6,6 +6,14 @@ one evaluate result; `L` = R.deterministic_annual_ledger; `Y` = L.rows[*]; `T` =
 and output-verifier reports. The export contract is `{plan,result,verification}`.
 An exported plan is a schema 2.0 input. A bare result is the verifier CLI input.
 
+The HTML bundle also carries `plan_json`, one Python-serialized JSON string per
+scenario. Both standalone plan downloads and the `plan` member of audit downloads
+use this text verbatim. JavaScript must not reserialize the plan: `143000.0` and
+`143000` have equal numeric values but different Python input fingerprints. Missing,
+malformed or value-inconsistent export text fails the report gate. The input hash
+algorithm is unchanged; prior fingerprints remain valid. Regression tests read the
+actual JavaScript download blobs in Python and replay both exported plan forms.
+
 ## Units, timing and presentation
 
 USD nominal at year-end unless marked real (2026 purchasing power). Input opening

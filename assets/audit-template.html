@@ -13,7 +13,8 @@
 </head>
 <body>
 <script id="data" type="application/json">__AUDIT_DATA__</script>
-<div class="layout"><aside class="side"><div class="brand">FinPlan <b>Audit</b></div><div class="minor">Private planning · 2026 rules</div>
+<div id="report-error" class="warnings" role="alert" hidden>报告数据缺失、损坏或未通过校验。请使用原始方案重新生成报告；此文件不能用于判断资金是否足够。</div>
+<div id="report-content" class="layout"><aside class="side"><div class="brand">FinPlan <b>Audit</b></div><div class="minor">Private planning · 2026 rules</div>
 <nav aria-label="报告章节"><a href="#snapshot">01 概览 Snapshot</a><a href="#retirement">02 退休预测</a><a href="#scenarios">03 方案对照</a><a href="#cashflow">04 年度现金流</a><a href="#year-detail">05 可追溯账本</a><a href="#sources">06 规则与限制</a></nav>
 <div class="sidefoot">所有财务数据保存在此 HTML 内，浏览器打开即读取。不要公开上传真实家庭报告。</div></aside>
 <main class="main"><header class="topline"><div><div class="eyebrow">HOUSEHOLD FINANCIAL PLAN · AUDITABLE</div><h1>家庭退休与现金流报告</h1><p class="lede">逐年可复算 · 规则可追溯 · 情景预计算 · 不把模型假设当成未来事实</p></div>
@@ -40,22 +41,107 @@
 </main></div>
 <script>
 'use strict';
-const data=JSON.parse(document.getElementById('data').textContent);
+try {
+ const data=JSON.parse(document.getElementById('data').textContent);
+ validateReportData(data);
+ startReport(data);
+} catch(error) { failReport(); }
+function requireNumber(value){
+ if(typeof value!=='number'||!Number.isFinite(value))throw Error('Invalid numeric field');
+ return value;
+}
+function requireNumbers(record,fields){
+ if(!record||typeof record!=='object'||Array.isArray(record))throw Error('Invalid numeric record');
+ for(const field of fields)requireNumber(record[field]);
+}
+function requireArray(value,length){
+ if(!Array.isArray(value)||(length!==undefined&&value.length!==length))throw Error('Invalid array');
+}
+function requireInteger(value){
+ if(!Number.isSafeInteger(requireNumber(value)))throw Error('Invalid integer field');
+}
+function requireFailureYear(value){if(value!==null)requireInteger(value)}
+function validateReportData(data){
+ // Validate every scenario and year before rendering or registering exports.
+ // The saved verification flag alone cannot establish JSON type integrity.
+ if(!Array.isArray(data.results)||data.results.length===0||
+    !Array.isArray(data.plans)||!Array.isArray(data.plan_json)||!Array.isArray(data.verification)||!Array.isArray(data.labels)||
+    [data.plans,data.plan_json,data.verification,data.labels].some(a=>a.length!==data.results.length)) throw Error('Invalid scenario bundle');
+ for(const [i,r] of data.results.entries()){
+  if(typeof data.plan_json[i]!=='string'||
+     JSON.stringify(JSON.parse(data.plan_json[i]))!==JSON.stringify(data.plans[i]))throw Error('Mismatched plan export');
+  const rows=r.deterministic_annual_ledger.rows;
+  requireArray(rows);requireArray(r.annual_real_percentiles,rows.length);
+  requireArray(r.simulated_path_manifest);requireInteger(r.trials);
+  if(data.verification[i].passed!==true||!r.deterministic_annual_ledger.rows.length||
+     !r.annual_real_percentiles.length||r.simulated_path_manifest.length!==r.trials||
+     r.evidence_status.model!=='restricted_research'||r.evidence_status.full_household_conclusion!==false||
+     r.evidence_status.input_independently_verified!==false||r.evidence_status.professional_review!=='not_recorded') throw Error('Invalid report evidence');
+  requireNumber(r.modeled_all_obligations_funded_fraction);
+  requireArray(r.mc_sampling_wilson95,2);r.mc_sampling_wilson95.forEach(requireNumber);
+  requireArray(r.terminal_real_p10_p50_p90,3);r.terminal_real_p10_p50_p90.forEach(requireNumber);
+  requireFailureYear(r.deterministic_annual_ledger.first_failure_year);
+  for(const [j,band] of r.annual_real_percentiles.entries()){
+   requireNumbers(band,['p10','p50','p90']);requireInteger(band.year);
+   if(band.year!==rows[j].year)throw Error('Mismatched chart year');
+  }
+  for(const row of rows){
+   requireInteger(row.year);
+   requireNumbers(row,['opening_total','investment_growth_total','wages_gross','wages_taxable',
+    'pretax_contributions','social_security_gross','pension_gross','other_after_tax_income',
+    'living_expenses_due','living_expenses_paid','unmet_spending','rmd_total','unmet_rmd',
+    'roth_converted','realized_ltcg','ira_extra_taxable','tax_due_total','tax_paid','unpaid_tax',
+    'closing_total','closing_total_real','reconciliation_residual']);
+   requireArray(row.skipped_conversions);
+   requireNumbers(row.tax,['taxable_social_security','adjusted_gross_income',
+    'standard_plus_age_deduction','enhanced_senior_deduction','ordinary_taxable',
+    'long_term_gain_taxable','ordinary_tax','capital_gains_tax','federal_income_tax','niit_due','niit_tax_base']);
+   if(!['ordinary_rate_cap','stacked_capital_gains'].includes(row.tax.income_tax_method))throw Error('Invalid tax method');
+   requireNumbers(row.payroll_tax,['total']);
+   for(const key of ['ordinary_bracket_lines','capital_gain_rate_lines']){
+    requireArray(row.tax[key]);
+    for(const line of row.tax[key])requireNumbers(line,['rate','taxable','tax']);
+   }
+   const accounts=Object.keys(row.closing_accounts);
+   if(!accounts.length)throw Error('Missing accounts');
+   for(const key of ['opening_accounts','closing_accounts','growth_by_account','account_reconciliation_residuals']){
+    requireNumbers(row[key],accounts);
+    if(Object.keys(row[key]).length!==accounts.length)throw Error('Mismatched accounts');
+   }
+   for(const id of accounts)requireNumbers(row.account_flows[id],['contribution','required_distribution',
+    'roth_conversion_out','roth_conversion_in','optional_draw','cash_external_inflow',
+    'cash_received_rmd','cash_received_draws','cash_tax_and_spending_outflow']);
+  }
+  for(const path of r.simulated_path_manifest){
+   requireInteger(path.path_index);requireNumber(path.terminal_real);requireFailureYear(path.first_failure_year);
+   if(typeof path.funded!=='boolean')throw Error('Invalid path funded flag');
+  }
+ }
+}
+function failReport(){
+ document.getElementById('report-content').hidden=true;
+ document.getElementById('report-content').style.display='none';
+ document.getElementById('report-error').hidden=false;
+ for(const id of ['download-json','download-plan','download-csv','print'])document.getElementById(id).disabled=true;
+ window.__financialAudit={error:'invalid_report'};
+}
+function startReport(data){
+const amount=requireNumber;
 const $=(x)=>document.getElementById(x);
-const fmt=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n);
-const full=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
-const pct=(n)=>`${(n*100).toFixed(1)}%`;
+const fmt=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(amount(n));
+const full=(n)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(amount(n));
+const pct=(n)=>`${(amount(n)*100).toFixed(1)}%`;
 let active=0,selectedYear=null;
 function text(id,val){$(id).textContent=val}
 function get(){return data.results[active]}
-function numeric(a,b){const d=document.createElement('dt');d.textContent=a;const dd=document.createElement('dd');dd.textContent=typeof b==='number'?full(b):b;return [d,dd]}
+function numeric(a,b,isText=false){const d=document.createElement('dt');d.textContent=a;const dd=document.createElement('dd');if(isText&&typeof b!=='string')throw Error('Invalid text detail');dd.textContent=isText?b:full(b);return [d,dd]}
 function save(filename,text,mime){const b=new Blob([text],{type:mime});const url=URL.createObjectURL(b);const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000)}
 function renderScenarios(){const host=$('scenario-buttons');host.replaceChildren();data.results.forEach((r,i)=>{
  const b=document.createElement('button');b.className='option';b.textContent=data.labels[i];b.setAttribute('aria-pressed',String(i===active));b.onclick=()=>{active=i;selectedYear=null;render()};host.append(b)})}
 function renderChart(r){const svg=$('asset-chart');svg.replaceChildren();
  const s=r.annual_real_percentiles;const det=r.deterministic_annual_ledger.rows;
- const max=Math.max(1,...s.map(x=>x.p90),...det.map(x=>x.closing_total_real));const W=760,H=300,L=67,R=21,T=12,B=32;
- const x=(i)=>L+(W-L-R)*(i/Math.max(1,s.length-1));const y=(v)=>H-B-(Math.max(0,v)/max)*(H-T-B);
+ const max=Math.max(1,...s.map(x=>amount(x.p90)),...det.map(x=>amount(x.closing_total_real)));const W=760,H=300,L=67,R=21,T=12,B=32;
+ const x=(i)=>L+(W-L-R)*(i/Math.max(1,s.length-1));const y=(v)=>H-B-(Math.max(0,amount(v))/max)*(H-T-B);
  const add=(type,attrs)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',type);Object.entries(attrs||{}).forEach(([k,v])=>el.setAttribute(k,String(v)));svg.append(el);return el};
  const mk=(arr)=>arr.map((v,i)=>(i?'L':'M')+x(i).toFixed(2)+' '+y(v).toFixed(2)).join(' ');
  for(let j=0;j<5;j++){let v=max*j/4;let yy=y(v);add('line',{x1:L,x2:W-R,y1:yy,y2:yy,stroke:'#e7edf0','stroke-width':'1'});let t=add('text',{x:L-8,y:yy+4,'text-anchor':'end',fill:'#8495a0','font-size':'12'});t.textContent= v>=1e6?'$'+(v/1e6).toFixed(1)+'M':'$'+Math.round(v/1000)+'K'}
@@ -65,14 +151,15 @@ function renderChart(r){const svg=$('asset-chart');svg.replaceChildren();
  add('path',{d:mk(det.map(q=>q.closing_total_real)),stroke:'#b08a58','stroke-width':'2','stroke-dasharray':'6 5',fill:'none'});
  for(let i=0;i<s.length;i+=Math.max(1,Math.floor(s.length/6))){let t=add('text',{x:x(i),y:H-8,'text-anchor':'middle',fill:'#8495a0','font-size':'12'});t.textContent=s[i].year}
  }
-function renderDetail(year){selectedYear=year;const r=get(),row=r.deterministic_annual_ledger.rows.find(q=>q.year===year);if(!row)return;
+function renderDetail(year){try{renderDetailChecked(year)}catch(error){failReport()}}
+function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.deterministic_annual_ledger.rows.find(q=>q.year===year);if(!row)return;
  text('year-heading',`${year} 年度逐项审计`);
  const okay=row.unmet_spending===0&&row.unpaid_tax===0&&row.unmet_rmd===0&&row.skipped_conversions.length===0&&row.reconciliation_residual===0;
  text('year-status',okay?'对账通过':'出现资金/规则缺口');$('year-status').className=okay?'pill':'pill warn';
  const details=[['期初全部账户',row.opening_total],['工资总额',row.wages_gross],['其中税前401(k)缴款（内部划转）',row.pretax_contributions],['社保金总额',row.social_security_gross],['退休金总额',row.pension_gross],['其他净收入',row.other_after_tax_income],['投资及现金收益',row.investment_growth_total],['应付生活开销',row.living_expenses_due],['实际生活支出',row.living_expenses_paid],['RMD（IRA/401k 转现金）',row.rmd_total],['Roth 转换（内部划转）',row.roth_converted],['已付联邦及工资税',row.tax_paid],['未支付税款',row.unpaid_tax],['未满足支出',row.unmet_spending],['期末全部账户',row.closing_total]];
  const inc=$('income-details');inc.replaceChildren();details.forEach(([name,num])=>inc.append(...numeric(name,num)));
- const td=[['所得税计算方法',row.tax.income_tax_method==='ordinary_rate_cap'?'普通税率上限（较低税额）':'资本利得优惠税率叠加'],['W-2 应税工资',row.wages_taxable],['税务计算中社保应税部分',row.tax.taxable_social_security],['实际已实现长期收益',row.realized_ltcg],['税前账户额外提取',row.ira_extra_taxable],['AGI（受限项目）',row.tax.adjusted_gross_income],['标准及65岁以上扣除',row.tax.standard_plus_age_deduction],['额外老人扣除',row.tax.enhanced_senior_deduction],['应税普通收入',row.tax.ordinary_taxable],['已实现收益应税部分',row.tax.long_term_gain_taxable],['普通所得税',row.tax.ordinary_tax],['资本利得税',row.tax.capital_gains_tax],['NIIT（投资净所得附加税）',row.tax.niit_due],['NIIT 计算税基',row.tax.niit_tax_base],['工资税 / FICA',row.payroll_tax.total],['总应付税款',row.tax_due_total]];
- const tax=$('tax-details');tax.replaceChildren();td.forEach(([name,num])=>tax.append(...numeric(name,num)));
+ const td=[['所得税计算方法',row.tax.income_tax_method==='ordinary_rate_cap'?'普通税率上限（较低税额）':'资本利得优惠税率叠加',true],['W-2 应税工资',row.wages_taxable],['税务计算中社保应税部分',row.tax.taxable_social_security],['实际已实现长期收益',row.realized_ltcg],['税前账户额外提取',row.ira_extra_taxable],['AGI（受限项目）',row.tax.adjusted_gross_income],['标准及65岁以上扣除',row.tax.standard_plus_age_deduction],['额外老人扣除',row.tax.enhanced_senior_deduction],['应税普通收入',row.tax.ordinary_taxable],['已实现收益应税部分',row.tax.long_term_gain_taxable],['普通所得税',row.tax.ordinary_tax],['资本利得税',row.tax.capital_gains_tax],['NIIT（投资净所得附加税）',row.tax.niit_due],['NIIT 计算税基',row.tax.niit_tax_base],['工资税 / FICA',row.payroll_tax.total],['总应付税款',row.tax_due_total]];
+ const tax=$('tax-details');tax.replaceChildren();td.forEach(([name,num,isText])=>tax.append(...numeric(name,num,isText)));
  const taxLines=(id,lines)=>{const target=$(id);target.replaceChildren();for(const line of lines){const tr=document.createElement('tr');[pct(line.rate),full(line.taxable),full(line.tax)].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td)});target.append(tr)}};
  taxLines('ordinary-brackets',row.tax.ordinary_bracket_lines);
  taxLines('capital-brackets',row.tax.capital_gain_rate_lines);
@@ -87,7 +174,8 @@ function renderDetail(year){selectedYear=year;const r=get(),row=r.deterministic_
  $('year-select').value=String(year);
  }
 function renderCashflow(r){const body=$('cashflow-rows'),select=$('year-select');body.replaceChildren();select.replaceChildren();for(const row of r.deterministic_annual_ledger.rows){const tr=document.createElement('tr');tr.dataset.year=row.year;const vals=[String(row.year),fmt(row.wages_gross),fmt(row.pretax_contributions),fmt(row.social_security_gross+row.pension_gross),fmt(row.living_expenses_due),fmt(row.tax_due_total),fmt(row.closing_total),fmt(row.unmet_spending+row.unpaid_tax+row.unmet_rmd)];for(const v of vals){let td=document.createElement('td');td.textContent=v;tr.append(td)}tr.addEventListener('click',()=>renderDetail(row.year));body.append(tr);const opt=document.createElement('option');opt.value=row.year;opt.textContent=row.year;select.append(opt)}select.onchange=()=>renderDetail(Number(select.value));renderDetail(selectedYear??r.deterministic_annual_ledger.rows[0].year)}
-function render(){const r=get(),yr=r.deterministic_annual_ledger.rows;
+function render(){try{renderChecked()}catch(error){failReport()}}
+function renderChecked(){const r=get(),yr=r.deterministic_annual_ledger.rows;
  renderScenarios();text('metric-success',pct(r.modeled_all_obligations_funded_fraction));text('metric-ci',`95% 抽样区间 ${pct(r.mc_sampling_wilson95[0])}–${pct(r.mc_sampling_wilson95[1])}`);
  text('metric-median',fmt(r.terminal_real_p10_p50_p90[1]));text('metric-tax',fmt(yr[0].tax.federal_income_tax));text('metric-first',r.deterministic_annual_ledger.first_failure_year||'未发生');
  text('sampling-note',`${r.trials} 条模拟路径；置信区间只反映随机抽样误差。`);
@@ -105,11 +193,14 @@ function render(){const r=get(),yr=r.deterministic_annual_ledger.rows;
  text('input-quality','期初余额口径: '+r.opening_balance_status+' · 输入来源状态: '+r.input_provenance.mode+' · 登记证据 '+r.input_provenance.register.length+' 条（并不等于原始文件已独立核查）');
  text('input-hash','输入 SHA256: '+r.input_sha256);text('engine-hash','计算代码 SHA256: '+r.engine_source_sha256);
  }
-$('download-json').onclick=()=>save('financial-audit.json',JSON.stringify({plan:data.plans[active],result:get(),verification:data.verification[active]},null,2),'application/json');
-$('download-plan').onclick=()=>save('financial-plan.json',JSON.stringify(data.plans[active],null,2),'application/json');
+// Splice the trusted Python JSON text, without parsing/stringifying the plan.
+// Both export forms must preserve the numeric spelling used by its SHA256.
+$('download-json').onclick=()=>save('financial-audit.json','{\n"plan":'+data.plan_json[active]+',\n"result":'+JSON.stringify(get(),null,2)+',\n"verification":'+JSON.stringify(data.verification[active],null,2)+'\n}','application/json');
+$('download-plan').onclick=()=>save('financial-plan.json',data.plan_json[active],'application/json');
 $('download-csv').onclick=()=>{const rows=get().deterministic_annual_ledger.rows;const fields=['year','opening_total','investment_growth_total','wages_gross','pretax_contributions','social_security_gross','pension_gross','living_expenses_paid','tax_due_total','tax_paid','unpaid_tax','closing_total','reconciliation_residual'];save('financial-audit-ledger.csv',fields.join(',')+'\n'+rows.map(r=>fields.map(k=>r[k]).join(',')).join('\n')+'\n','text/csv')};
 $('print').onclick=()=>window.print();
-render();window.__financialAudit={getActive:()=>active,getYear:()=>selectedYear,getReport:()=>get()};
+window.__financialAudit={getActive:()=>active,getYear:()=>selectedYear,getReport:()=>get()};render();
+}
 </script>
 </body>
 </html>
