@@ -41,8 +41,11 @@ ledger and manifest entry. See the [verification matrix](references/verification
 The year audit now lists blocked under-60 accounts, skipped conversions and unmet RMDs.
 Engine numbers are unchanged; a pension amount now requires an explicit start age.
 A [2026-10-29 source re-check](references/source-check-2026-10-29.md) found every register
-value unchanged (via search extracts of official pages; primary-document review pending),
-and the verifier now checks RMD divisors against the confirmed Uniform Lifetime Table.
+value unchanged via search extracts, and the verifier now checks RMD divisors against the
+confirmed Uniform Lifetime Table. A same-day [primary-document review](references/primary-source-review-2026-10-29.md)
+read the IRS documents, statute, Federal Register notices and CFR text directly (with file
+hashes and locators) and found no mismatches; printed Rev. Proc. 2025-32 rows and Pub 915
+Example 3 are now golden cases for both the engine and the verifier.
 Reviewers and the next maintainer should start from the [handover notes](references/handover-2026-10-29.md).
 
 ## Canonical offline verification (free, no Actions quota)
