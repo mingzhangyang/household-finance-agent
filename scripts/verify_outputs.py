@@ -770,8 +770,8 @@ def _rule_basis_checks(row,basis,expect):
             raise VerifyFailure(f'{y}: {rule} rule_basis fields changed')
         if (got['status']!=want['status'] or type(got['base_year']) is not int
                 or got['base_year']!=want['base_year'] or got['source_id']!=want['source_id']):
-            raise VerifyFailure(f'{y}: {rule} labeled {got["status"]} from {got["base_year"]}; '
-                                f'the register gives {want["status"]} from {want["base_year"]}')
+            raise VerifyFailure(f'{y}: {rule} labeled {got["status"]} from {got["base_year"]} ({got["source_id"]}); '
+                                f'the register gives {want["status"]} from {want["base_year"]} ({want["source_id"]})')
         expect(got['multiplier'],want['multiplier'],f'{y}: {rule} index from {want["base_year"]}',.0000000051)
 
 

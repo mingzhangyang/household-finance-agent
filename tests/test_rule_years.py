@@ -157,7 +157,7 @@ class RuleBasisForgeries(unittest.TestCase):
 
     def test_projected_year_cannot_be_labeled_published(self):
         result=self.forged(lambda row:row['rule_basis']['income_tax_tables'].update(status='published',multiplier=1.))
-        with self.assertRaisesRegex(VerifyFailure,'labeled published from 2026; the register gives projected from 2026'):
+        with self.assertRaisesRegex(VerifyFailure,r'labeled published from 2026 \(brackets_standard_senior\); the register gives projected from 2026 \(brackets_standard_senior\)'):
             verify(result,self.plan)
 
     def test_published_year_cannot_be_labeled_projected(self):
@@ -169,7 +169,7 @@ class RuleBasisForgeries(unittest.TestCase):
         for family,field,value,message in (
                 ('income_tax_tables','base_year',2027,'labeled projected from 2027'),
                 ('income_tax_tables','base_year',2026.0,'labeled projected from 2026.0'),
-                ('oasdi_wage_base','source_id','payroll','oasdi_wage_base labeled published from 2027'),
+                ('oasdi_wage_base','source_id','payroll',r'oasdi_wage_base labeled published from 2027 \(payroll\); the register gives published from 2027 \(payroll_2027\)'),
                 ('elective_deferral_limit','multiplier',1.03,'elective_deferral_limit index from 2026')):
             with self.subTest(family=family,field=field):
                 result=self.forged(lambda row:row['rule_basis'][family].update({field:value}))
