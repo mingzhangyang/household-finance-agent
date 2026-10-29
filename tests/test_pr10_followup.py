@@ -105,6 +105,61 @@ class FollowupVerifierGates(unittest.TestCase):
         self.assertEqual(len(row['skipped_conversions']),1)
         self.assertTrue(verify(result,plan)['passed'])
 
+    def test_chained_tax_component_tolerances_cannot_forge_failure(self):
+        # Unlike the simpler total-due mutation, this coordinated forgery
+        # stays within EVERY individual subtotal tolerance in the old verifier.
+        plan=self.zero_income_plan()
+        plan['accounts'][3]['balance']=100000
+        plan['roth_conversions']=[{'year':2027,'from':'ira','to':'roth','amount_nominal':100000}]
+        plan['accounts'][0]['balance']=run_path(plan,[0.])['rows'][0]['tax_due_total']
+        result=evaluate(plan)
+        summary=result['deterministic_annual_ledger']
+        row=summary['rows'][0]
+        self.assertFalse(summary['failed'])
+        self.assertEqual(row['unpaid_tax'],0.)
+        self.assertEqual(row['closing_accounts']['cash'],0.)
+        self.assertTrue(verify(result,plan)['passed'])
+        tax=row['tax']
+        self.assertEqual(tax['capital_gain_rate_lines'][0]['rate'],0.)
+        tax['capital_gain_rate_lines'][0]['tax']=.01
+        tax['capital_gains_tax']=.01
+        tax['niit_due']=.01
+        tax['federal_income_tax']=round(tax['federal_income_tax']+.02,2)
+        tax['total_federal_income_and_niit']=round(tax['total_federal_income_and_niit']+.04,2)
+        row['tax_due_total']=round(row['tax_due_total']+.04,2)
+        row['unpaid_tax']=.04
+        summary.update(failed=True,first_failure_year=2027)
+        summary['notices']=[{'year':2027,'blocks':[
+            f"{a['id']}: early distributions before 60 not modeled"
+            for a in plan['accounts'] if a['kind'] in
+            ('traditional_ira','traditional_401k','roth_ira')]}]
+        for supplied in (None,plan):
+            with self.subTest(plan=supplied is not None):
+                with self.assertRaisesRegex(VerifyFailure,
+                                            'independently recomputed total federal liability'):
+                    verify(result,supplied)
+
+    def test_nonzero_return_exact_balance_conversion_and_ira_continuity(self):
+        for conversion_year in (2027,2028):
+            with self.subTest(conversion_year=conversion_year):
+                plan=self.conversion_plan(20000001.)
+                plan['end_year']=conversion_year
+                plan['assumptions'].update(equity_weight=1.,equity_mean=-.15,
+                    equity_volatility=0.,bond_mean=0.,bond_volatility=0.,
+                    annual_investment_fee=0.)
+                amount=20000001.
+                for year in range(2027,conversion_year+1):
+                    amount+=amount*(-.15)
+                plan['roth_conversions']=[{'year':conversion_year,
+                    'from':'ira','to':'roth','amount_nominal':amount}]
+                result=evaluate(plan)
+                rows=result['deterministic_annual_ledger']['rows']
+                self.assertEqual(rows[-1]['conversion_transfers'][0]['amount'],amount)
+                self.assertEqual(rows[-1]['skipped_conversions'],[])
+                # The 2028 case independently tests sub-cent carry-forward
+                # of the 2027 balance before executing the exact conversion.
+                self.assertTrue(verify(result,plan)['passed'])
+
 
 if __name__=='__main__':
     unittest.main()

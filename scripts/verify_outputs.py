@@ -586,9 +586,15 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
             # to a rounded opening balance in the report.
             for aid,opening in unrounded_ira.items():
                 flow=row['account_flows'][aid]
-                ending=(opening*(1+path_return)+flow['contribution']
-                        -flow['required_distribution']-flow['roth_conversion_out']
-                        -flow['optional_draw'])
+                # Match the engine's sequence: balance += balance * return,
+                # then apply year-end contributions, RMD, conversions and draws.
+                # balance * (1 + return) is NOT the same floating-point result.
+                ending=opening
+                ending+=ending*path_return
+                ending+=flow['contribution']
+                ending-=flow['required_distribution']
+                ending-=flow['roth_conversion_out']
+                ending-=flow['optional_draw']
                 expect(row['closing_accounts'][aid],ending,
                        f'{y}: {aid} unrounded IRA closing continuity',
                        .0051+1e-12*abs(ending))
@@ -835,6 +841,20 @@ def _rule_checks(row,policy,plan,expect):
                         +payroll['additional_medicare_taxable_wages']*EXTRA_MEDICARE_RATE)
     expect(payroll['total'],payroll_from_bases,f'{y}: payroll tax total from wage bases',
            .0071+1e-12*abs(payroll_from_bases))
+    # Cross-check the FINAL liability in one pass from taxable bases and the
+    # independently retyped rate schedules. Do not add together reported
+    # ordinary, gain, NIIT and payroll tax subtotals: each subtotal has its
+    # own rounding allowance, which can be chained into a fake tax shortfall.
+    # Bases were validated against the income and deduction worksheets above;
+    # only the final cent-rounding and source-base rounding remain here.
+    independent_income_tax=sum(rate*amount for _,_,rate,amount in portions)+min(stacked,capped)
+    investment_income=row['realized_ltcg']+row['growth_by_account'][row['cash_account_id']]
+    independent_niit=.038*min(max(0.,investment_income),
+        max(0.,tax['adjusted_gross_income']-(250000. if status=='mfj' else 200000.)))
+    independently_due=independent_income_tax+independent_niit+payroll_from_bases
+    expect(row['tax_due_total'],independently_due,
+           f'{y}: independently recomputed total federal liability',
+           .0101+1e-12*abs(independently_due))
 
 
 def _plan_checks(row,plan,path_return,blocks,expect,unrounded_ira):
@@ -891,8 +911,13 @@ def _plan_checks(row,plan,path_return,blocks,expect,unrounded_ira):
         source=request['from']
         amount=request['amount_nominal']
         if source not in available:
-            available[source]=(unrounded_ira[source]*(1+path_return)
-                               +flows[source]['contribution']-flows[source]['required_distribution'])
+            # The plan's IRA journal applies investment growth by addition,
+            # not by multiplying the opening amount by (1 + return).
+            balance=unrounded_ira[source]
+            balance+=balance*path_return
+            balance+=flows[source]['contribution']
+            balance-=flows[source]['required_distribution']
+            available[source]=balance
         if executed and executed[0]=={'from':source,'to':request['to'],'amount':amount}:
             if available[source]+1e-9<amount:
                 raise VerifyFailure(f'{y}: conversion exceeds the {source} balance left after RMD')
