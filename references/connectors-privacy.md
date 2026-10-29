@@ -2,7 +2,11 @@
 
 ## First-party workflow
 
-ChatGPT is the conversational agent and planning coordinator. A reusable Skill supplies a workflow and bundled code; it is **not** a permanent server, database, autonomous scheduler, licensed advisor, or generic API client. Do not imply that installing the Skill automatically grants access to financial accounts, executes Python in every client, or ensures data persists forever.
+The host agent (Codex or Claude Code, per the [M0 decision record](m0-scope-decision.md)) is the conversational agent and planning coordinator. A reusable Skill supplies a workflow and bundled code; it is **not** a permanent server, database, autonomous scheduler, licensed advisor, or generic API client. Do not imply that installing the Skill automatically grants access to financial accounts, executes Python in every client, or ensures data persists forever.
+
+## Where the data goes
+
+The scripts run on the user's machine or in the host's session container. The model does not: whatever the agent reads into the conversation — plan JSON, results, statement excerpts, chat text — is sent to the host's model provider (OpenAI for Codex, Anthropic for Claude Code) and handled under the user's account and retention settings. In a cloud session, the checkout and generated files also live in the provider's container. So this Skill is not "fully offline": minimize what the agent reads (aliases, no full account numbers, SSNs or credentials), prefer having scripts read files and print only the needed fields, and keep real household files out of Git. The generated HTML report holds its data in plaintext.
 
 ## Data acquisition tiers
 

@@ -1,6 +1,6 @@
 # Household Finance Agent — reproducible, auditable restricted v2.2
 
-An installable ChatGPT Skill with an original interactive, offline financial planning report. **The v2.2 engine deliberately restricts supported tax and investment scenarios** to provide transparent, independently checkable calculations instead of broad but unverifiable claims.
+An installable agent Skill for Codex and Claude Code, with an original interactive, offline financial planning report. **The v2.2 engine deliberately restricts supported tax and investment scenarios** to provide transparent, independently checkable calculations instead of broad but unverifiable claims.
 
 See [ROADMAP.md](ROADMAP.md) for the phased plan, supported-scope decisions, deliverables and acceptance gates toward a validated planning assistant.
 
@@ -52,9 +52,31 @@ tables are published for 2026, the OASDI wage base for 2026–2027 and the base 
 for 2026. Later years project the latest published year at the plan's assumed rate, and every
 annual row labels each rule family `published` or `projected` in `rule_basis` (output contract
 1.1). The verifier checks those labels against its own retyped registry and the report's year
-audit shows them. Engine numbers are unchanged. A draft [M0 decision record](references/m0-scope-decision.md)
-awaits the scope owner. Reviewers and the next maintainer should start from the
+audit shows them. Engine numbers are unchanged.
+
+On 2026-10-29 the scope owner recorded the launch decisions in the
+[M0 decision record](references/m0-scope-decision.md): professional-assisted use,
+federal plus Maryland tax (other states kept pluggable), taxable brokerage accounts,
+Social Security rebuilt from the earnings record, and delivery as an agent Skill in
+Codex or Claude Code. These are targets; the code still enforces the federal-only
+research scope in [supported scope](references/supported-scope.md) until each piece ships. Reviewers and the next maintainer should start from the
 [handover notes](references/handover-2026-10-29-rule-years.md).
+
+## Installing the Skill
+
+The repository root is the Skill: `SKILL.md` (name and description, read by both hosts),
+`agents/openai.yaml` (Codex display metadata), `scripts/`, `references/` and `assets/`.
+Link or copy the checkout to the host's skill folder; both hosts follow symlinks:
+
+```bash
+# Codex: repository scope (or $HOME/.agents/skills for every repository)
+mkdir -p .agents/skills && ln -s /path/to/household-finance-agent .agents/skills/household-finance-agent
+# Claude Code: personal scope (or .claude/skills inside a project)
+mkdir -p ~/.claude/skills && ln -s /path/to/household-finance-agent ~/.claude/skills/household-finance-agent
+```
+
+The agent runs the scripts with its own shell tool and needs Python 3.10+. Data the agent
+reads is sent to the host's model provider; see [privacy](references/connectors-privacy.md).
 
 ## Canonical offline verification (free, no Actions quota)
 

@@ -1,10 +1,16 @@
 # M0 supported scope — engineering baseline, not launch approval
 
-Contract 1.0, 2026-10-28. Scope owner and independent professional reviewer:
-**not assigned / acceptance pending**. Until they confirm scope, this remains a
-local, offline, USD, federal-only research tool. No state is certified as supported;
-excluding state tax does not imply a household owes none. No complete retirement
-feasibility, tax-return, transaction or optimal-strategy conclusion is permitted.
+Contract 1.0, 2026-10-28. On 2026-10-29 the scope owner recorded the launch
+decisions in the [M0 decision record](m0-scope-decision.md): professional-assisted use;
+federal plus Maryland (other states kept pluggable); taxable brokerage accounts
+supported; Social Security rebuilt from the earnings record; delivered as an agent
+Skill run in Codex or Claude Code. A professional reviewer has been named; their
+details and issue list are not yet recorded. **These are launch targets, not current
+capability.** Until the M2/M3 work ships and passes verification, the table below is
+what the code enforces: a USD, federal-only research tool. No state is certified as
+supported; excluding state tax does not imply a household owes none. No complete
+retirement feasibility, tax-return, transaction or optimal-strategy conclusion is
+permitted.
 
 ## Executable boundaries
 
@@ -65,13 +71,20 @@ not proof of real-world applicability.
 
 No reference module can silently change the annual main engine.
 
-## Decisions remaining before milestone acceptance
+## Launch decisions and remaining acceptance
 
-Proposed engineering scope is individual research, no certified state, external
-age-specific SS estimates, offline-only delivery. Launch audience, state scope,
-professional-review resources, approved independent comparison tools/data licensing
-and responsible people remain unconfirmed. M0 engineering artifacts may be reviewed
-now; M0 sign-off and downstream launch gates remain pending. M1 test infrastructure
-can be prepared without claiming these decisions have been made. A draft
-[decision record](m0-scope-decision.md) lists each decision's options, the current
-baseline and the downstream effect, for the scope owner to confirm or change.
+Recorded 2026-10-29 in the [M0 decision record](m0-scope-decision.md). Each changes
+what must be built; none changes the executable boundaries above until shipped.
+
+| Decision | Target | Engineering consequence |
+|---|---|---|
+| Audience | Professional-assisted use | Outputs stay `restricted_research` until gates pass; M5 adds issue log, rollback and reviewer trail |
+| Household, income, accounts (2a, 2d, 2e) | Unchanged baseline | Single/MFJ, birth 1951–2006, constant status; no self-employment, rental, inherited accounts, Form 8606 basis, match or catch-up |
+| Taxable brokerage (2c) | Supported | M2 group 1: annual dividends and interest, realized losses with the capital-loss limit and carryover, NIIT on them |
+| State tax (2b) | Maryland, with a jurisdiction interface for other states | M2 group 2: full-year residents, county/Baltimore City local tax required; unregistered states keep failing closed |
+| Social Security (3) | Rebuilt from the earnings record | M3: indexing, AIME, PIA, COLA, claiming adjustments, spouse/survivor; SSA statement estimates become an independent cross-check |
+| Delivery (5) | Agent Skill in Codex or Claude Code | Scripts run locally or in the host session; data the agent reads goes to the model provider; M5 covers that flow and a run in both hosts |
+
+Still pending for M0 sign-off: the named reviewer's details and their list of
+substantive issues to cover. Independent comparison tools and market-data licensing
+are undecided; they do not block M2 but remain M1/M4 acceptance inputs.
