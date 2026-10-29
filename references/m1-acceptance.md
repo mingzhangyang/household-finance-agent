@@ -7,7 +7,7 @@ Exact source revision and run results belong to the PR and CI artifact manifest.
 
 ## Independent inputs, method and acceptance rules
 
-`tests/golden/m1-cases.json` contains three complete **fictional** plans. No real
+`tests/golden/m1-cases.json` contains four complete **fictional** plans. No real
 household documents are needed. `tests/golden/m1_reference.py` derives the answers
 with 40-digit Decimal, case-specific algebra and explicit segment/range assertions.
 It imports only Python's decimal module. It does not import production tax tables,
@@ -16,11 +16,12 @@ The existing iterative funding engine is evaluated separately by
 `scripts/verify_m1_cases.py`; that command records every comparison and difference.
 This is implementation independence, not a separate person's professional review.
 
-All cases assume zero investment returns, cash yield, fees and inflation, qualified
-Roth withdrawals and fully pretax traditional accounts. Monetary inputs and balances
-are nominal USD. Projection years 2027–2030 use **hypothetical frozen 2026 federal
-rates/deductions**, including the modeled expiration of the enhanced senior deduction
-after 2028. They do not assert enacted 2027–2030 tax tables. Events use whole-year
+Cases 1–3 assume zero investment returns, cash yield, fees and inflation; case 4
+states its returns, inflation and index. All assume qualified Roth withdrawals and
+fully pretax traditional accounts. Monetary inputs and balances are nominal USD.
+Projection years 2027–2030 use **hypothetical 2026 federal rates/deductions**,
+frozen in cases 1–3 and indexed 2% a year in case 4, including the modeled
+expiration of the enhanced senior deduction after 2028. They do not assert enacted 2027–2030 tax tables. Events use whole-year
 ages; RMD is taken in the modeled year, before conversion, with no first-year deferral.
 No state tax, death, spousal entitlement calculation or market-risk inference is added.
 
@@ -45,6 +46,11 @@ household examples. Changing a fixture requires reviewing its equations and rang
 | [Publication 590-B](https://www.irs.gov/publications/p590b) | 2025 edition, owner RMD calculation and Appendix B Table III ages 73/74 | Prior December 31 IRA balance divided by 26.5 / 25.5 |
 | [IRS Topic 751](https://www.irs.gov/taxtopics/tc751) | Social Security and Medicare withholding rates | Employee 6.2% + 1.45%; case wage is below the reference wage cap |
 | [IRS NIIT](https://www.irs.gov/individuals/net-investment-income-tax) | Individual calculation and threshold table | 3.8% of the lesser of NII or positive MAGI excess; single threshold USD 200,000 |
+| [SSA 2027 fact sheet](https://www.ssa.gov/cola/factsheets/2027.html), [IRS Topic 560](https://www.irs.gov/taxtopics/tc560), [IRS 401(k) limits](https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-401k-and-profit-sharing-plan-contribution-limits) | Register entries `payroll_2027`, `additional_medicare`, `401k_elective_limit_2026` | Case 4: 192,300 OASDI cap, 0.9% above 200,000, base deferral limit 24,500 |
+
+Case 4 (added 2026-10-29) reuses values already recorded in
+[rules-provenance.md](rules-provenance.md); those sources were not re-opened when
+the case was added.
 
 ## Case 1: wages → retirement → Social Security
 
@@ -112,6 +118,36 @@ failure or create negative account balances.
 | Depletion | 2029 | 0.00 | 0.00 | 16,613.64 |
 | Depletion | 2030 | 0.00 | 0.00 | 30,000.00 |
 
+## Case 4: growth, inflation and hypothetical indexing
+
+Single, born 1966; works in 2027 (age 61) and retires at 62. Wages 220,000 grow 5%;
+a 20,000 real 401(k) deferral escalates with **3% plan inflation**, below the base
+limit 24,500 × 1.02. Portfolio return 6% − 1% fee = 5%; cash yield 2%. Federal
+tables use a **hypothetical 2% index** (1.02, then 1.0404), deliberately different
+from plan inflation, so each amount must use the correct index. Cash 20,000,
+taxable 50,000 (basis 30,000), IRA 300,000; spending 120,000 real plus a one-time
+60,000 real expense in 2027.
+
+- 2027: ordinary taxable income 210,800 − 16,422 = 194,378 in the indexed 24%
+  bracket; OASDI on the published 192,300 cap, Medicare on 231,000 and 0.9% above
+  200,000. Pre-sale tax T0 = 54,666.98. The expense forces a partial sale X of the
+  appreciated account (gain fraction 3/7). Each gain dollar bears 15% plus 3.8%
+  NIIT, because MAGI exceeds 200,000 by more than NII, so
+  X = (185,400 + T0 − 230,800) / (1 − 0.188 × 3/7) = 10,079.06.
+- 2028: no wages or cash. The taxable balance 44,541.98 is sold, realizing
+  20,301.45 at 15% above the indexed 0% zone. IRA draw D solves
+  0.78D = spending − V + 12%-bracket tax − 0.22 × (deduction + 12% top) + 0.15G,
+  so D = 98,236.54 in the indexed 22% bracket. The hypothetical OASDI cap is
+  192,300 × 1.02 although no wages are paid.
+
+Range assertions confirm every bracket, zone, NIIT limiting base and available
+balance, and that stacking is below the ordinary-rate alternative.
+
+| Case | Year | Total taxes | Closing assets | Unmet spending |
+|---|---|---:|---:|---:|
+| Growth and indexing | 2027 | 55,479.06 | 378,020.94 | 0.00 |
+| Growth and indexing | 2028 | 15,470.52 | 254,143.46 | 0.00 |
+
 ## Browser and evidence reproduction
 
 ```sh
@@ -130,7 +166,7 @@ bundle. CI runs the collector with native supervision mandatory and uploads the
 manifest, differences, logs, four-scenario screenshots, actual downloads and PDFs.
 
 The pinned Playwright suite exercises all four existing report scenarios at
-1440×1000 and 390×844, every yearly cash-flow/tax/account table, both downloaded
+1440×1000 and 390×844, every yearly cash-flow/tax/account table and notice list, both downloaded
 plan and audit-bundle replay paths, CSV, offline requests, printing, overflow and
 19 corrupted/empty/error variants. It checks an actual CJK font is rendering the
 heading; text nodes alone do not prove Chinese glyphs are visible. Inspect generated
@@ -153,7 +189,7 @@ Screen tables and calculation behavior are unchanged.
 The three-case engineering check and Chromium acceptance do not confirm the launch
 scope or supply an independent professional reviewer. Physical iPhone/Safari,
 Android, accessibility assistive-technology checks, general tax/SSA coverage,
-nonzero-return independent scenarios and commercial-tool benchmarking remain outside
-this slice. Keep the verification matrix explicit and do not label all M0–M5 gates
+nonzero-return scenarios beyond case 4 and commercial-tool benchmarking remain
+outside this slice. Keep the verification matrix explicit and do not label all M0–M5 gates
 complete. No real-family trial, production deployment or transaction is authorized
 by these tests.
