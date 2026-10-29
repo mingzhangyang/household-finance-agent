@@ -1,4 +1,10 @@
-# Output contract 1.0
+# Output contract 1.1
+
+1.1 (2026-10-29): every annual row adds `rule_basis`; `T.tax_law_year` is now the
+published year whose income-tax tables apply (still 2026 for every year);
+`T.policy` is written per year; `evidence_status.contract_version` is `1.1` and
+`tax_rules` is `published_tax_year_rules_with_labeled_hypothetical_projection`.
+No calculated value changed.
 
 This catalog covers report numbers, JSON exports, CSV and trace output. `R` means
 one evaluate result; `L` = R.deterministic_annual_ledger; `Y` = L.rows[*]; `T` = Y.tax;
@@ -41,7 +47,7 @@ The M1 verification matrix further records gaps and mutation evidence.
 |---|---|---|
 | R.engine_version, policy, scenario, opening_balance_status, tax_policy, year_range | Version / input copy; start = as_of_year+1 | Policy/range checks; input hash; no proof that a policy is appropriate |
 | R.input_sha256, engine_source_sha256 | SHA256 canonical sorted compact UTF-8 input / concatenated audit_plan, tax2026, tax_extensions bytes | Recomputed with supplied plan / source directory; no signature |
-| R.input_provenance, evidence_status | Supplied register plus fixed research-status metadata | Structural input validation; original documents and professional review not verified |
+| R.input_provenance, evidence_status | Supplied register plus fixed research-status metadata (contract 1.1) | Structural input validation and exact status values; original documents and professional review not verified |
 | R.rules_sources, rule_scope | Source links and model limitations | Version-controlled disclosures, not live external-source verification |
 | R.success_paths, trials | Count of funded paths / input trial count | Manifest count and boolean aggregation |
 | R.modeled_all_obligations_funded_fraction | success_paths/trials | Arithmetic, 0.00001 tolerance |
@@ -70,8 +76,9 @@ The M1 verification matrix further records gaps and mutation evidence.
 | T.capital_gain_rate_lines[*].rate,taxable,tax | Decimal rate, USD portion and tax | Product/sum checked; stacked zones or capped ordinary portions recomputed |
 | T.ordinary_tax,capital_gains_tax,federal_income_tax,income_tax_method | USD; chosen lesser ordinary-rate-cap / preferred method | Both methods recomputed; reported method must be the lower (one-cent tie tolerance); not all tax law verified |
 | T.niit_magi_assumed_equal_agi,niit_net_investment_income,niit_threshold,niit_tax_base,niit_rate,niit_due,total_federal_income_and_niit | USD except decimal rate; restricted income base and threshold | Independently recomputed NIIT from modeled components; no unsupported income/adjustments |
-| T.tax_law_year,year,rule_multiplier,policy,unmodeled | 2026 reference; projected year; hypothetical index; disclosures | Year, 2026 law year and multiplier from policy checked; disclosures by replay; not future legislation |
-| P.wage_base_per_person,oasdhi_taxable_wages_by_person,additional_medicare_taxable_wages,social_security_tax,medicare_tax,additional_medicare_tax,total | USD nominal, employee FICA only | Published 2026/2027 caps and hypothetical later cap, rates and Additional Medicare threshold recomputed; covered wages = min(gross wages, base) for a single filer, at least that for joint filers; with plan, per-person covered wages |
+| T.tax_law_year,year,rule_multiplier,policy,unmodeled | Published year of the income-tax tables used; row year; index from that year (1 when published); per-year disclosure naming the published year and, for a projection, `NOT published <year> law` | Law year, multiplier and exact disclosure recomputed from the retyped register and plan rate; `unmodeled` by replay; not future legislation |
+| Y.rule_basis[F].status,base_year,multiplier,source_id for F = income_tax_tables, oasdi_wage_base, elective_deferral_limit | `published` (own year, multiplier 1) or `projected` (latest published year × (1+assumed rate)^(year−base_year)); 8-decimal multiplier; register source ID | Recomputed from the verifier's retyped register: a projected year labeled published, or a changed base year, source or index, is rejected; required in contract 1.1 results and traces; shown in the year audit |
+| P.wage_base_per_person,oasdhi_taxable_wages_by_person,additional_medicare_taxable_wages,social_security_tax,medicare_tax,additional_medicare_tax,total | USD nominal, employee FICA only | Published caps (2026, 2027) and later caps projected from the latest published cap per `rule_basis`, rates and Additional Medicare threshold recomputed; covered wages = min(gross wages, base) for a single filer, at least that for joint filers; with plan, per-person covered wages |
 | Y.tax_due_total,tax_paid,unpaid_tax | USD nominal, federal+NIIT+FICA and cash settlement | Components checked; paid+unpaid = due within one cent |
 | Y.closing_total,closing_accounts[A],closing_total_real | USD nominal; real = nominal / inflation factor | Conservation, account sums, nonnegative balances, deflation; account-count-dependent rounding tolerance |
 | Y.reconciliation_residual,account_reconciliation_residuals[A] | USD, closing minus reconstructed closing | $0.01 residual gate; exported rounded-account reconstruction generally $0.05 |
@@ -93,6 +100,11 @@ The M1 verification matrix further records gaps and mutation evidence.
   95% describe fixed quantile/interval choices, not predictive confidence.
 - Year audit notices: engine blocked-account messages, skipped conversions (from,
   amount, reason) and cent-visible unmet RMD records, listed verbatim; no new amounts.
+- Year audit rule basis: one line per `rule_basis` family. A projection names its
+  published base year, its 8-decimal multiplier and says it is not a published value
+  for that year. Labels must match the report's retyped list of published years and
+  source IDs, the plan's assumed rate and the row's income-tax metadata; otherwise the
+  report hides conclusions and exports.
   Duplicate notice years or years outside the ledger hide conclusions and exports.
   The year status badge uses the engine's USD 0.01 reconciliation gate.
 - Evidence count = input_provenance.register.length; neither this count nor

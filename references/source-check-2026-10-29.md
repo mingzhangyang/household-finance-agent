@@ -67,6 +67,8 @@ professional sign-off are still required before decision-grade use.
 
 ## Still required
 
-Direct review of the primary documents once `www.irs.gov`, `www.ecfr.gov` and
-`www.ssa.gov` are reachable (or offline), the Publication 915 worksheet line text,
-and an independent professional reviewer's sign-off.
+Superseded on the same day by the [direct primary-document review](primary-source-review-2026-10-29.md),
+which read the IRS documents, the statute, the Federal Register notices and the CFR text
+(including the Publication 915 worksheet lines) and found no mismatches. Still open: the SSA
+web pages and examples (`www.ssa.gov` refused the request) and an independent professional
+reviewer's sign-off.

@@ -762,7 +762,7 @@ class GeneratedOutputsAndSingleFieldMutations(unittest.TestCase):
                 target=forged['deterministic_annual_ledger']['rows'][row_index]
                 for part in path[:-1]:
                     target=target[part]
-                target[path[-1]]+=1e-6 if path[-1] in ('rate','rule_multiplier','niit_rate','market_return','inflation_factor','divisor') else 1
+                target[path[-1]]+=1e-6 if path[-1] in ('rate','rule_multiplier','multiplier','niit_rate','market_return','inflation_factor','divisor') else 1
                 with self.subTest(plan=n,field='.'.join(map(str,path))):
                     with self.assertRaises(VerifyFailure):
                         verify(forged,plan)

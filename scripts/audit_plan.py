@@ -15,7 +15,7 @@ import statistics
 import sys
 from pathlib import Path
 from datetime import date
-from tax2026 import federal_tax, payroll_tax, CONTRIB_401K_LIMIT, SOURCES
+from tax2026 import federal_tax, payroll_tax, elective_deferral_limit, rule_basis, RULE_FAMILIES, SOURCES
 from tax_extensions import net_investment_income_tax, SOURCE as NIIT_SOURCE
 
 RULESET = 'US_FEDERAL_2026_RESTRICTED_v2.2'
@@ -265,7 +265,7 @@ def _tax_calc(p,year,retail,wages_by_person,wage_taxable,pension,ss,interest,rmd
             ss_benefits=ss,status=p['tax_policy']['filing_status'],ages=ages,year=year,
             bracket_inflation=p['tax_policy']['future_bracket_inflation'])
     payroll=payroll_tax(wages_by_person,p['tax_policy']['filing_status'],
-                       wage_base_multiplier=(1+p['tax_policy']['future_bracket_inflation'])**max(0,year-2027),year=year)
+                       year=year,assumed_rate=p['tax_policy']['future_bracket_inflation'])
     # No foreign income exclusion, separate investment deductions or passive revenue
     # are supported. In this restricted scope, MAGI equals AGI and modeled NII
     # consists only of cash interest and realized positive long-term gains.
@@ -296,6 +296,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
     rows=[]; fail_years=[]; notices=[]
     for n,year in enumerate(range(y0+1,y1+1),start=1):
         factor=(1+p['assumptions']['inflation'])**n
+        basis_by_rule=rule_basis(year,p['tax_policy']['future_bracket_inflation'])
         start=bal.copy(); growth={}
         r=max(-.999,annual_portfolio_returns[n-1])
         for aid,acc in amap.items():
@@ -309,10 +310,11 @@ def run_path(p, annual_portfolio_returns, verify=True):
             age=year-m['birth_year']
             wages=m['annual_wages_2026']*(1+m['wage_growth'])**n if age < m['retirement_age'] else 0.
             contrib=m.get('annual_pretax_401k_2026_real',0)*factor if wages else 0.
-            max_limit=CONTRIB_401K_LIMIT*(1+p['tax_policy']['future_bracket_inflation'])**(year-2026)
+            max_limit=elective_deferral_limit(year,p['tax_policy']['future_bracket_inflation'])
             # Catch-up limits are NOT modeled; fail closed when above base elective limit.
             if contrib>min(wages,max_limit)+1e-7:
-                raise ModelError(f'{year}: {m["id"]} pretax 401k contribution exceeds modeled wage/2026-base limit; catch-up unsupported')
+                limit_year=basis_by_rule['elective_deferral_limit']['base_year']
+                raise ModelError(f'{year}: {m["id"]} pretax 401k contribution exceeds modeled wage/{limit_year}-base limit; catch-up unsupported')
             wages_by_person.append(wages)
             wage_taxable += wages-contrib
             bal[cash_id]+=wages-contrib
@@ -438,6 +440,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
             'roth_converted':round(converted,2),'conversion_transfers':conversion_transfers,'skipped_conversions':skipped,
             'extra_draws':{k:round(v,2) for k,v in draws.items()},
             'realized_ltcg':round(gain,2),'ira_extra_taxable':round(ira_extra,2),
+            'rule_basis':{rule:{**entry,'multiplier':round(entry['multiplier'],8)} for rule,entry in basis_by_rule.items()},
             'tax':{k:(round(v,8) if k in ('rule_multiplier','niit_rate') else round(v,2) if isinstance(v,(float,int)) and not isinstance(v,bool)
                 else [{j:(round(n,2) if isinstance(n,float) else n) for j,n in line.items()} for line in v] if k in ('ordinary_bracket_lines','capital_gain_rate_lines')
                 else v) for k,v in fed.items()},
@@ -503,15 +506,27 @@ def wilson_interval(success,total,z=1.96):
 def evidence_status(p):
     """Separate scope and provenance from arithmetic or professional approval."""
     return {
-        'contract_version': '1.0',
+        'contract_version': '1.1',
         'model': 'restricted_research',
         'input': p.get('input_provenance', {}).get('mode', 'not_provided'),
         'input_independently_verified': False,
         'professional_review': 'not_recorded',
         'market_calibration': 'not_validated',
-        'tax_rules': '2026_reference_with_hypothetical_future_indexing',
+        'tax_rules': 'published_tax_year_rules_with_labeled_hypothetical_projection',
         'full_household_conclusion': False,
     }
+
+
+def published_rules_scope():
+    """Disclosure generated from the published-value registry, so it cannot go stale."""
+    names={'income_tax_tables':'income tax tables','oasdi_wage_base':'OASDI wage base',
+           'elective_deferral_limit':'base elective deferral limit'}
+    spans=[]
+    for rule,published in RULE_FAMILIES.items():
+        years=sorted(published)
+        spans.append(f'{names[rule]} {years[0]}' if len(years)==1 else f'{names[rule]} {years[0]}-{years[-1]}')
+    return ('Published federal values by tax year ('+'; '.join(spans)+'); each later year indexes the latest '
+            'published values at an ASSUMED rate and is labeled projected in rule_basis; not future legislation.')
 
 
 def evaluate(p):
@@ -564,7 +579,7 @@ def evaluate(p):
         'annual_real_percentiles':bands,'simulated_path_manifest':path_manifest,
         'deterministic_annual_ledger':deterministic,'rules_sources':{**SOURCES,'niit':NIIT_SOURCE},
         'rule_scope':[
-            '2026 federal reference tables projected forward at an ASSUMED bracket inflation; not future legislation.',
+            published_rules_scope(),
             '2026 federal progressive ordinary tax, simplified Social Security taxation, standard/senior deductions, long-term gains, FICA (2027 SSA wage base actual), and selected RMDs modeled.',
             '2026 NIIT on modeled cash interest and positive realized long-term gains; MAGI assumes no foreign exclusions; thresholds unindexed.',
             'No state tax, AMT, itemization, tax credits, IRMAA/ACA, inherited accounts, income limits, QCD or employer matching.',

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 from audit_plan import run_path
 from tax2026 import progressive_tax, taxable_social_security
+import verify_outputs
 
 CASES = json.loads((ROOT/'tests/golden/reference-cases.json').read_text())
 
@@ -42,6 +43,20 @@ class GoldenReferences(unittest.TestCase):
                 self.assertIn(case['source'], CASES['sources'])
                 fn = progressive_tax if case['kind']=='progressive' else taxable_social_security
                 self.assertAlmostEqual(fn(**case['inputs']), case['expected'], delta=case['tolerance'])
+
+    def test_verifier_schedules_reproduce_sourced_component_cases(self):
+        # The verifier retypes the register; anchor its copy to the same
+        # published answers instead of to the engine's constants.
+        for case in CASES['component_cases']:
+            with self.subTest(case=case['id']):
+                inputs = case['inputs']
+                if case['kind'] == 'progressive':
+                    portions = verify_outputs.bracket_portions(0., inputs['income'], inputs['status'], 1.)
+                    actual = sum(rate*amount for _, _, rate, amount in portions)
+                else:
+                    actual = verify_outputs.taxable_benefits(
+                        inputs['benefits'], inputs['other_income']+.5*inputs['benefits'], inputs['status'])
+                self.assertAlmostEqual(actual, case['expected'], delta=case['tolerance'])
 
     def test_integrated_fixed_answers(self):
         for case in CASES['projection_cases']:

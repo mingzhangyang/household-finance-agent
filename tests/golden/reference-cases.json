@@ -3,8 +3,8 @@
   "review_status": "engineering_reference_not_professionally_reviewed",
   "retrieved_on": "2026-10-28",
   "sources": {
-    "rates": {"url": "https://www.irs.gov/irb/2025-45_IRB", "locator": "Rev. Proc. 2025-32 section 4.01 Tables 1 and 3, 4.03 capital gains, 4.14 standard deduction", "rule_year": 2026},
-    "ss": {"url": "https://www.irs.gov/publications/p915", "locator": "2025 edition, Examples, Example 1 / filled Worksheet 1", "rule_year": 2025},
+    "rates": {"url": "https://www.irs.gov/irb/2025-45_IRB", "locator": "Rev. Proc. 2025-32 section 4.01 Tables 1 and 3 (printed base amounts read from rp-25-32.pdf on 2026-10-29), 4.03 capital gains, 4.14 standard deduction", "rule_year": 2026},
+    "ss": {"url": "https://www.irs.gov/publications/p915", "locator": "2025 edition, Examples 1 and 3 / filled Worksheet 1 (read from p915.pdf on 2026-10-29)", "rule_year": 2025},
     "rmd": {"url": "https://www.irs.gov/publications/p590b", "locator": "2025 edition, Appendix B Table III, ages 73 and 74", "rule_year": 2025}
   },
   "component_cases": [
@@ -16,7 +16,20 @@
     {"id":"joint-boundary", "kind":"progressive", "source":"rates", "inputs":{"income":100800,"status":"mfj"}, "expected":11600, "tolerance":0.000001, "derivation":"2480 + (100800 - 24800) times 12%"},
     {"id":"ss-official-example-1", "kind":"ss", "source":"ss", "inputs":{"benefits":5980,"other_income":28990,"status":"single"}, "expected":2990, "tolerance":0.005, "derivation":"Official Worksheet 1 result; benefits only, no claim about 2025 total income tax"},
     {"id":"ss-base-boundary", "kind":"ss", "source":"ss", "inputs":{"benefits":10000,"other_income":20000,"status":"single"}, "expected":0, "tolerance":0.005, "derivation":"20000 + half of 10000 = 25000; no taxable benefit"},
-    {"id":"ss-85-percent-cap", "kind":"ss", "source":"ss", "inputs":{"benefits":10000,"other_income":100000,"status":"single"}, "expected":8500, "tolerance":0.005, "derivation":"85% cap applies; no exclusions or special worksheets"}
+    {"id":"ss-85-percent-cap", "kind":"ss", "source":"ss", "inputs":{"benefits":10000,"other_income":100000,"status":"single"}, "expected":8500, "tolerance":0.005, "derivation":"85% cap applies; no exclusions or special worksheets"},
+    {"id":"rp-25-32-single-50400", "kind":"progressive", "source":"rates", "inputs":{"income":50400,"status":"single"}, "expected":5800, "tolerance":0.000001, "derivation":"Printed base amount, Table 3 row starting at $50,400: $5,800 plus 22% of the excess over $50,400"},
+    {"id":"rp-25-32-single-105700", "kind":"progressive", "source":"rates", "inputs":{"income":105700,"status":"single"}, "expected":17966, "tolerance":0.000001, "derivation":"Printed base amount, Table 3 row starting at $105,700: $17,966 plus 24% of the excess over $105,700"},
+    {"id":"rp-25-32-single-201775", "kind":"progressive", "source":"rates", "inputs":{"income":201775,"status":"single"}, "expected":41024, "tolerance":0.000001, "derivation":"Printed base amount, Table 3 row starting at $201,775: $41,024 plus 32% of the excess over $201,775"},
+    {"id":"rp-25-32-single-256225", "kind":"progressive", "source":"rates", "inputs":{"income":256225,"status":"single"}, "expected":58448, "tolerance":0.000001, "derivation":"Printed base amount, Table 3 row starting at $256,225: $58,448 plus 35% of the excess over $256,225"},
+    {"id":"rp-25-32-single-640600", "kind":"progressive", "source":"rates", "inputs":{"income":640600,"status":"single"}, "expected":192979.25, "tolerance":0.000001, "derivation":"Printed base amount, Table 3 row starting at $640,600: $192,979.25 plus 37% of the excess over $640,600"},
+    {"id":"rp-25-32-mfj-24800", "kind":"progressive", "source":"rates", "inputs":{"income":24800,"status":"mfj"}, "expected":2480, "tolerance":0.000001, "derivation":"Printed base amount, Table 1 row starting at $24,800: $2,480 plus 12% of the excess over $24,800"},
+    {"id":"rp-25-32-mfj-211400", "kind":"progressive", "source":"rates", "inputs":{"income":211400,"status":"mfj"}, "expected":35932, "tolerance":0.000001, "derivation":"Printed base amount, Table 1 row starting at $211,400: $35,932 plus 24% of the excess over $211,400"},
+    {"id":"rp-25-32-mfj-403550", "kind":"progressive", "source":"rates", "inputs":{"income":403550,"status":"mfj"}, "expected":82048, "tolerance":0.000001, "derivation":"Printed base amount, Table 1 row starting at $403,550: $82,048 plus 32% of the excess over $403,550"},
+    {"id":"rp-25-32-mfj-512450", "kind":"progressive", "source":"rates", "inputs":{"income":512450,"status":"mfj"}, "expected":116896, "tolerance":0.000001, "derivation":"Printed base amount, Table 1 row starting at $512,450: $116,896 plus 35% of the excess over $512,450"},
+    {"id":"rp-25-32-mfj-768700", "kind":"progressive", "source":"rates", "inputs":{"income":768700,"status":"mfj"}, "expected":206583.5, "tolerance":0.000001, "derivation":"Printed base amount, Table 1 row starting at $768,700: $206,583.50 plus 37% of the excess over $768,700"},
+    {"id":"rp-25-32-single-above-top", "kind":"progressive", "source":"rates", "inputs":{"income":700000,"status":"single"}, "expected":214957.25, "tolerance":0.000001, "derivation":"Table 3 printed row: $192,979.25 plus 37% of the excess over $640,600; 192979.25 + 0.37 x 59400"},
+    {"id":"rp-25-32-mfj-above-top", "kind":"progressive", "source":"rates", "inputs":{"income":800000,"status":"mfj"}, "expected":218164.5, "tolerance":0.000001, "derivation":"Table 1 printed row: $206,583.50 plus 37% of the excess over $768,700; 206583.50 + 0.37 x 31300"},
+    {"id":"ss-official-example-3-mfj", "kind":"ss", "source":"ss", "inputs":{"benefits":10000,"other_income":40500,"status":"mfj"}, "expected":6275, "tolerance":0.005, "derivation":"Official Example 3 (Worksheet 1 line 3 = 40,500 including excluded bond interest per the worksheet note; line 8 = 45,500): 0.85 x 1,500 + min(5,000, 6,000) = 6,275"}
   ],
   "projection_cases": [
     {"id":"cash-exhaustion", "source":"rates", "years":2, "birth_year":1967, "cash":30000, "ira":0, "taxable":0, "basis":0, "conversion":0, "spending":20000,

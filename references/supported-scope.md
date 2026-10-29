@@ -18,13 +18,13 @@ not proof of real-world applicability.
 | Household | Limited: one single adult or two MFJ adults; constant membership and status | member count / filing-status match |
 | Ages | Limited: birth years 1951–2006 (20–75 at 2026 year-end); horizon age ≤120; whole-year ages | birth / horizon validation |
 | Calendar | Limited: opening balances at 2026-12-31; projection 2027 through end year ≤2110 | as_of_year, end_year, opening_balance_status |
-| Rules | Limited: 2026 federal reference, hypothetical future indexing; separate published 2027 wage-cap exception | tax_policy; rules-provenance.md |
+| Rules | Limited: published values by tax year (income tax tables 2026, OASDI wage base 2026–2027, elective limit 2026); later years projected from the latest published year at an assumed rate and labeled per row | tax_policy; rule_basis; rules-provenance.md |
 | State/local/non-US tax | Excluded from research, no supported-state claim | explicit excluded_with_disclosure; unknown jurisdiction rejected |
 | Accounts | Exactly one cash, at most one taxable, owned traditional IRA / 401(k) / Roth IRA | kind, owner and withdrawal-order checks |
 | Traditional accounts | Limited: entirely pretax, uniform RMD table, no still-working exception | affirmative confirmations; no inherited accounts or Form 8606 basis |
 | Roth | Limited: user affirmatively assumes qualified distributions; no qualification calculation | qualified_distributions_confirmed |
 | Early distributions | Rejected as a source of funding before whole-year age 60; other accounts may fund | run_path notices listed in the year audit; resulting shortfall stays visible |
-| Contributions | Limited: owned pretax 401(k), base elective limit hypothetically indexed, ≤wages | runtime contribution gate; no catch-up, match or IRA contribution |
+| Contributions | Limited: owned pretax 401(k), base elective limit (published 2026, later years projected), ≤wages | runtime contribution gate; no catch-up, match or IRA contribution |
 | Conversion | Limited: specified year and amount, same-owner traditional IRA → Roth | validation; unavailable source recorded as skipped and failed path |
 | Wages/pension | Limited: supplied wages/growth/retirement age; fully taxable pension indexed with assumed inflation, from an explicit start age | numeric validation; pension amount without start age rejected; no self-employment/rental income |
 | Social Security | Limited: supplied annual benefit in 2026 dollars for exact claim age 62–70; assumed inflation | basis required; work before FRA with benefits rejected |
@@ -40,8 +40,9 @@ not proof of real-world applicability.
 
 - Missing, malformed, out-of-range and unsupported input: `ModelError`, code
   `INVALID_OR_UNSUPPORTED_PLAN`; CLI exit 2. No new result/report is written.
-- A non-2026 reference or opening year is rejected. Supported future years carry
-  hypothetical-rule status, never an assertion of enacted future law. There is
+- A non-2026 reference or opening year is rejected. Years without published values
+  carry `projected` status in each row's `rule_basis`, never an assertion of enacted
+  future law. There is
   no automatic rule refresh or clock-based tax certification.
 - Non-convergent funding / accounting failure: stop calculation with `ModelError`.
 - Insufficient assets: retain explicit unpaid tax, unmet spending/RMD and skipped
@@ -71,4 +72,6 @@ age-specific SS estimates, offline-only delivery. Launch audience, state scope,
 professional-review resources, approved independent comparison tools/data licensing
 and responsible people remain unconfirmed. M0 engineering artifacts may be reviewed
 now; M0 sign-off and downstream launch gates remain pending. M1 test infrastructure
-can be prepared without claiming these decisions have been made.
+can be prepared without claiming these decisions have been made. A draft
+[decision record](m0-scope-decision.md) lists each decision's options, the current
+baseline and the downstream effect, for the scope owner to confirm or change.

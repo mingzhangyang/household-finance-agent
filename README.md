@@ -41,9 +41,20 @@ ledger and manifest entry. See the [verification matrix](references/verification
 The year audit now lists blocked under-60 accounts, skipped conversions and unmet RMDs.
 Engine numbers are unchanged; a pension amount now requires an explicit start age.
 A [2026-10-29 source re-check](references/source-check-2026-10-29.md) found every register
-value unchanged (via search extracts of official pages; primary-document review pending),
-and the verifier now checks RMD divisors against the confirmed Uniform Lifetime Table.
-Reviewers and the next maintainer should start from the [handover notes](references/handover-2026-10-29.md).
+value unchanged via search extracts, and the verifier now checks RMD divisors against the
+confirmed Uniform Lifetime Table. A same-day [primary-document review](references/primary-source-review-2026-10-29.md)
+read the IRS documents, statute, Federal Register notices and CFR text directly (with file
+hashes and locators) and found no mismatches; printed Rev. Proc. 2025-32 rows and Pub 915
+Example 3 are now golden cases for both the engine and the verifier.
+
+The first M2 deliverable keeps published tax-year values apart from projections: income-tax
+tables are published for 2026, the OASDI wage base for 2026–2027 and the base elective limit
+for 2026. Later years project the latest published year at the plan's assumed rate, and every
+annual row labels each rule family `published` or `projected` in `rule_basis` (output contract
+1.1). The verifier checks those labels against its own retyped registry and the report's year
+audit shows them. Engine numbers are unchanged. A draft [M0 decision record](references/m0-scope-decision.md)
+awaits the scope owner. Reviewers and the next maintainer should start from the
+[handover notes](references/handover-2026-10-29-rule-years.md).
 
 ## Canonical offline verification (free, no Actions quota)
 
@@ -77,7 +88,7 @@ Each scenario's exact plan (including seed and return assumptions) is embedded i
 
 ## Limits and status
 
-**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT treatment for dividends/passive income or foreign exclusion, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Taxes in 2027 and later use a **hypothetical indexed 2026 tax schedule**, not enacted future tax law; SSA's 2027 wage cap is explicitly a separate published exception. Some yearly timing conventions use year-end approximations.
+**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT treatment for dividends/passive income or foreign exclusion, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Each year uses published federal values where they exist (2026 income-tax tables; 2026 and 2027 OASDI wage bases; 2026 elective limit); other years **project the latest published values at a hypothetical rate** and every row labels them `projected` in `rule_basis`. Projections are not enacted future tax law. Some yearly timing conventions use year-end approximations.
 
 The legacy v1 engine and its browser suite are not present in this checkout. The v2.2 commands above refer to the actual checked-in engine.
 

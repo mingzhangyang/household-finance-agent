@@ -51,6 +51,10 @@ statutory re-check of the register values.
 - [Source re-check](source-check-2026-10-29.md): every register value, all 49 Uniform
   Lifetime rows and the SSA research values matched official pages via search extracts
   (direct retrieval blocked); the verifier now checks RMD divisors against that table.
+- [Primary-document review](primary-source-review-2026-10-29.md), same day: the IRS
+  documents, statute, Federal Register notices and CFR text themselves confirmed every
+  register value and all 49 table rows; twelve printed Rev. Proc. 2025-32 rows and Pub 915
+  Example 3 became golden cases checked against both the engine and the verifier.
 - Real Chromium with the pinned Playwright 1.56.1 (Chromium 153.0.8010.12, Noto CJK
   fonts): **36 checks passed**, including year-audit notice lists for every year and scenario.
 - A sweep exposed one verifier tolerance error (basis rounding after small taxable
