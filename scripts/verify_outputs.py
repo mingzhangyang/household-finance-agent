@@ -17,9 +17,10 @@ from math import isfinite, sqrt
 from pathlib import Path
 
 ENGINE_VERSION='2.2-auditable-restricted'
-# 2026 reference values retyped from references/rules-provenance.md (snapshot
-# 2026-10-28), deliberately not imported from tax2026.py. Later years apply the
-# documented hypothetical indexing convention; they are not enacted law.
+# Published tax-year values retyped from references/rules-provenance.md
+# (primary documents read 2026-10-29), deliberately not imported from tax2026.py.
+# A year without published values indexes the latest published year at the
+# plan's assumed rate; such years are labeled projected, never enacted law.
 ORDINARY_2026={'single':((12400,.10),(50400,.12),(105700,.22),(201775,.24),(256225,.32),(640600,.35),(None,.37)),
                'mfj':((24800,.10),(100800,.12),(211400,.22),(403550,.24),(512450,.32),(768700,.35),(None,.37))}
 STANDARD_2026={'single':16100.,'mfj':32200.}
@@ -36,7 +37,14 @@ MEDICARE_RATE=.0145
 EXTRA_MEDICARE_RATE=.009
 EXTRA_MEDICARE_WAGES={'single':200000.,'mfj':250000.}
 OASDI_WAGE_BASE={2026:184500.,2027:192300.}
-ELECTIVE_DEFERRAL_2026=24500.
+ELECTIVE_DEFERRAL={2026:24500.}
+PUBLISHED_INCOME_TAX={2026:{'ordinary':ORDINARY_2026,'standard':STANDARD_2026,
+                            'age_65_addition':AGE_65_ADDITION_2026,'gain_zones':GAIN_ZONES_2026}}
+# Register source IDs of each published year, per rule family.
+RULE_SOURCES={'income_tax_tables':{2026:'brackets_standard_senior'},
+              'oasdi_wage_base':{2026:'payroll',2027:'payroll_2027'},
+              'elective_deferral_limit':{2026:'401k_elective_limit_2026'}}
+RULE_BASIS_FIELDS={'status','base_year','multiplier','source_id'}
 # Uniform Lifetime Table, 26 CFR 1.401(a)(9)-9(c) as amended by T.D. 9930
 # (85 FR 72472), distribution years from 2022; every row matched to the regulation
 # text and Pub 590-B (2025) Table III on 2026-10-29
@@ -82,11 +90,11 @@ def numeric_vector(value,length,description):
 def plan_sha256(plan):
     return hashlib.sha256(json.dumps(plan,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
-def bracket_portions(low_income,high_income,status,multiplier):
+def bracket_portions(low_income,high_income,status,multiplier,law_year=2026):
     """Portion of (low_income, high_income] in each retyped ordinary bracket."""
     portions=[]
     low=0.
-    for ceiling,rate in ORDINARY_2026[status]:
+    for ceiling,rate in PUBLISHED_INCOME_TAX[law_year]['ordinary'][status]:
         high=None if ceiling is None else ceiling*multiplier
         top=high_income if high is None else min(high_income,high)
         portions.append((low,high,rate,max(0.,top-max(low_income,low))))
@@ -104,11 +112,27 @@ def taxable_benefits(benefits,provisional,status):
         return min(.5*benefits,.5*(provisional-first))
     return min(.85*benefits,.85*(provisional-second)+min(.5*benefits,.5*(second-first)))
 
-def oasdi_wage_base(year,indexing):
-    """Published 2026/2027 caps; later caps index the 2027 cap hypothetically."""
-    if year in OASDI_WAGE_BASE:
-        return OASDI_WAGE_BASE[year]
-    return OASDI_WAGE_BASE[2027]*(1+indexing)**(year-2027)
+def expected_rule_basis(year,rate):
+    """Per rule family: the year's own published values, else the latest
+    published year indexed at the plan's assumed rate (projected)."""
+    basis={}
+    for rule,sources in RULE_SOURCES.items():
+        if year in sources:
+            base,multiplier,status=year,1.,'published'
+        elif year>max(sources):
+            base=max(sources)
+            multiplier,status=(1+rate)**(year-base),'projected'
+        else:
+            raise VerifyFailure(f'{year}: no published {rule} values to apply or project')
+        basis[rule]={'status':status,'base_year':base,'multiplier':multiplier,'source_id':sources[base]}
+    return basis
+
+def income_tax_policy(basis,year):
+    """Documented per-year disclosure for the income-tax tables (output-contract.md)."""
+    base=basis['base_year']
+    if basis['status']=='published':
+        return f'{base} published federal tables'
+    return f'{base} published federal tables indexed hypothetically to {year}; NOT published {year} law'
 
 def rmd_start_age(birth_year):
     # Register entry rmd_birth_1959: age 73 for 1951-1959 births, 75 from 1960.
@@ -241,10 +265,10 @@ def _verify(x,plan=None,engine_dir=None):
     if 'input_provenance' in x:
         verify_provenance(x['input_provenance'])
     if 'evidence_status' in x:
-        expected={'contract_version':'1.0','model':'restricted_research',
+        expected={'contract_version':'1.1','model':'restricted_research',
             'input':x['input_provenance']['mode'],'input_independently_verified':False,
             'professional_review':'not_recorded','market_calibration':'not_validated',
-            'tax_rules':'2026_reference_with_hypothetical_future_indexing',
+            'tax_rules':'published_tax_year_rules_with_labeled_hypothetical_projection',
             'full_household_conclusion':False}
         if (x['evidence_status']!=expected or
             type(x['evidence_status']['input_independently_verified']) is not bool or
@@ -326,8 +350,11 @@ def _verify(x,plan=None,engine_dir=None):
             for value,q in zip(values,(.1,.5,.9)):
                 close(value,quant(finals,q),'annual MC terminal percentile',.02)
     ledger=x['deterministic_annual_ledger']['rows']
+    # Contract 1.1 results label every row's rule basis; legacy results without
+    # evidence metadata are still held to the same register values.
     checks,max_residual=_verify_ledger(x['deterministic_annual_ledger'],x['tax_policy'],
-                                       first_year,last_year,plan)
+                                       first_year,last_year,plan,
+                                       require_basis='evidence_status' in x)
     if plan is not None:
         if x['input_sha256']!=plan_sha256(plan):
             raise VerifyFailure('input SHA mismatch')
@@ -406,7 +433,7 @@ def _notice_blocks(notices,first_year,last_year):
     return blocks
 
 
-def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
+def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,require_basis=True):
     """Annual checks shared by the deterministic ledger and traced paths.
 
     returns=None selects the deterministic plan-mean path; otherwise the
@@ -578,7 +605,7 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
             max_residual=max(max_residual,abs(row['closing_accounts'][aid]-expected))
         checks+=27+(plan is not None)+len(row['rmd'])*3
         _journal_checks(row,previous_basis,expect)
-        _rule_checks(row,policy,plan,expect)
+        _rule_checks(row,policy,plan,expect,require_basis)
         if plan is not None:
             path_return=deterministic_return(plan) if returns is None else returns[index]
             _plan_checks(row,plan,path_return,notices.get(y,[]),expect,unrounded_ira)
@@ -731,15 +758,40 @@ def _journal_checks(row,previous_basis,expect):
     expect(row['realized_ltcg'],gains,f'{y}: realized long-term gain from proportional basis',slack+1e-12*gains)
 
 
-def _rule_checks(row,policy,plan,expect):
+def _rule_basis_checks(row,basis,expect):
+    """A projected year may never be labeled published, nor rebased or reindexed."""
+    y=row['year']
+    reported=row['rule_basis']
+    if not isinstance(reported,dict) or set(reported)!=set(basis):
+        raise VerifyFailure(f'{y}: rule_basis families changed')
+    for rule,want in basis.items():
+        got=reported[rule]
+        if not isinstance(got,dict) or set(got)!=RULE_BASIS_FIELDS:
+            raise VerifyFailure(f'{y}: {rule} rule_basis fields changed')
+        if (got['status']!=want['status'] or type(got['base_year']) is not int
+                or got['base_year']!=want['base_year'] or got['source_id']!=want['source_id']):
+            raise VerifyFailure(f'{y}: {rule} labeled {got["status"]} from {got["base_year"]}; '
+                                f'the register gives {want["status"]} from {want["base_year"]}')
+        expect(got['multiplier'],want['multiplier'],f'{y}: {rule} index from {want["base_year"]}',.0000000051)
+
+
+def _rule_checks(row,policy,plan,expect,require_basis=True):
     """Recompute each restricted federal worksheet step from the retyped register."""
     y=row['year']
     tax=row['tax']
     status=policy['filing_status']
-    multiplier=(1+policy['future_bracket_inflation'])**(y-2026)
-    if tax['year']!=y or tax['tax_law_year']!=2026:
-        raise VerifyFailure(f'{y}: tax record year or reference law year changed')
+    basis=expected_rule_basis(y,policy['future_bracket_inflation'])
+    income=basis['income_tax_tables']
+    law_year=income['base_year']
+    law=PUBLISHED_INCOME_TAX[law_year]
+    multiplier=income['multiplier']
+    if tax['year']!=y or type(tax['tax_law_year']) is not int or tax['tax_law_year']!=law_year:
+        raise VerifyFailure(f'{y}: tax record year or published law year changed')
     expect(tax['rule_multiplier'],multiplier,f'{y}: hypothetical bracket index',.0000000051)
+    if require_basis or 'rule_basis' in row:
+        _rule_basis_checks(row,basis,expect)
+        if tax['policy']!=income_tax_policy(income,y):
+            raise VerifyFailure(f'{y}: income-tax policy disclosure differs from its rule basis')
     benefits=row['social_security_gross']
     other=(row['wages_taxable']+row['pension_gross']+row['rmd_total']+row['ira_extra_taxable']
            +row['roth_converted']+row['growth_by_account'][row['cash_account_id']]+row['realized_ltcg'])
@@ -748,7 +800,7 @@ def _rule_checks(row,policy,plan,expect):
            f'{y}: taxable Social Security worksheet',.0151)
     if plan is not None:
         elderly=sum(y-member['birth_year']>=65 for member in plan['members'])
-        expect(tax['standard_plus_age_deduction'],(STANDARD_2026[status]+elderly*AGE_65_ADDITION_2026[status])*multiplier,
+        expect(tax['standard_plus_age_deduction'],(law['standard'][status]+elderly*law['age_65_addition'][status])*multiplier,
                f'{y}: indexed standard and age-65 deduction',.0051)
         senior=0.
         if SENIOR_YEARS[0]<=y<=SENIOR_YEARS[1]:
@@ -762,7 +814,7 @@ def _rule_checks(row,policy,plan,expect):
            f'{y}: taxable long-term gain after unused deduction',.0201)
     base=tax['ordinary_taxable']
     gains=tax['long_term_gain_taxable']
-    portions=bracket_portions(0.,base,status,multiplier)
+    portions=bracket_portions(0.,base,status,multiplier,law_year)
     lines=tax['ordinary_bracket_lines']
     if len(lines)>len(portions):
         raise VerifyFailure(f'{y}: extra ordinary bracket lines')
@@ -781,12 +833,12 @@ def _rule_checks(row,policy,plan,expect):
     expect(tax['ordinary_tax'],sum(rate*amount for _,_,rate,amount in portions),f'{y}: ordinary tax from schedule',.0101)
     # Publication 505 Worksheet 2-7 lines 38-40: lower of stacked gain rates or
     # ordinary rates on all taxable income, gains taking the top of the stack.
-    zero_top,fifteen_top=(threshold*multiplier for threshold in GAIN_ZONES_2026[status])
+    zero_top,fifteen_top=(threshold*multiplier for threshold in law['gain_zones'][status])
     zero=max(0.,min(gains,zero_top-base))
     fifteen=max(0.,min(gains-zero,fifteen_top-max(zero_top,base)))
     twenty=max(0.,gains-zero-fifteen)
     stacked=.15*fifteen+.20*twenty
-    capped_lines={rate:amount for _,_,rate,amount in bracket_portions(base,base+gains,status,multiplier) if amount>0}
+    capped_lines={rate:amount for _,_,rate,amount in bracket_portions(base,base+gains,status,multiplier,law_year) if amount>0}
     capped=sum(rate*amount for rate,amount in capped_lines.items())
     method=tax['income_tax_method']
     reported=tax['capital_gain_rate_lines']
@@ -812,7 +864,8 @@ def _rule_checks(row,policy,plan,expect):
     else:
         raise VerifyFailure(f'{y}: unsupported income tax method')
     payroll=row['payroll_tax']
-    cap=oasdi_wage_base(y,policy['future_bracket_inflation'])
+    wage_basis=basis['oasdi_wage_base']
+    cap=OASDI_WAGE_BASE[wage_basis['base_year']]*wage_basis['multiplier']
     expect(payroll['wage_base_per_person'],cap,f'{y}: OASDI wage base',.0051+1e-12*cap)
     covered=payroll['oasdhi_taxable_wages_by_person']
     numeric_vector(covered,1 if status=='single' else 2,f'{y}: OASDI wages by person')
@@ -876,9 +929,10 @@ def _plan_checks(row,plan,path_return,blocks,expect,unrounded_ira):
         expect(row['pretax_contribution_by_account'].get(aid,0.),scheduled['deferrals'].get(aid,0.),
                f'{y}: {aid} deferral scheduled by plan',.0051)
     expect(row['pretax_contributions'],sum(scheduled['deferrals'].values()),f'{y}: deferrals scheduled by plan',.0051)
-    # Per-person base elective limit (no catch-up), indexed by the hypothetical
-    # policy rate; a non-contributing member's unused target is ignored.
-    limit=ELECTIVE_DEFERRAL_2026*(1+plan['tax_policy']['future_bracket_inflation'])**(y-2026)
+    # Per-person base elective limit (no catch-up): published, else indexed by the
+    # hypothetical policy rate; a non-contributing member's unused target is ignored.
+    deferral_basis=expected_rule_basis(y,plan['tax_policy']['future_bracket_inflation'])['elective_deferral_limit']
+    limit=ELECTIVE_DEFERRAL[deferral_basis['base_year']]*deferral_basis['multiplier']
     for member,pay,deferral in zip(plan['members'],scheduled['wages'],scheduled['member_deferrals']):
         if deferral>min(pay,limit)+1e-7:
             raise VerifyFailure(f'{y}: {member["id"]} deferral exceeds wages or the indexed base elective limit')

@@ -28,6 +28,12 @@ function expectedNotices(result,row) {
   for(const item of row.rmd)if(Math.round(item.unmet*100)>0)items.push(`RMD 未足额：${item.account} 应提 ${dollars(item.required,2)}，实提 ${dollars(item.taken,2)}`);
   return items.length?items:['本年度没有提款限制、未执行的转换或 RMD 缺口。'];
 }
+function expectedRuleBasis(row) {
+  const names={income_tax_tables:'所得税税阶、标准扣除与资本利得门槛',oasdi_wage_base:'社保工资上限',elective_deferral_limit:'401(k) 基本缴款限额'};
+  return Object.entries(names).map(([family,name])=>{const b=row.rule_basis[family];
+    return b.status==='published'?`${name}：${b.base_year} 年已公布数值（${b.source_id}）`
+      :`${name}：${b.base_year} 年已公布数值 × ${b.multiplier.toFixed(8)}，按方案假设指数推算到 ${row.year} 年，不是已公布的 ${row.year} 年数值（${b.source_id}）`});
+}
 async function main() {
   await fs.mkdir(output,{recursive:true});
   const {chromium} = require('playwright');
@@ -81,10 +87,12 @@ async function main() {
             heading:document.querySelector('#year-heading').textContent,
             tax:[...document.querySelectorAll('#tax-details dd')].map(x=>x.textContent),
             notices:[...document.querySelectorAll('#year-notices li')].map(x=>x.textContent),
+            basis:[...document.querySelectorAll('#year-rule-basis li')].map(x=>x.textContent),
             accounts:[...document.querySelectorAll('#account-rows tr')].map(tr=>[...tr.cells].map(td=>td.textContent))
           }));
           assert.equal(ui.heading,`${row.year} 年度逐项审计`);
           assert.deepEqual(ui.notices,expectedNotices(result,row));
+          assert.deepEqual(ui.basis,expectedRuleBasis(row));
           assert.deepEqual(ui.tax.slice(1),[row.wages_taxable,row.tax.taxable_social_security,
             row.realized_ltcg,row.ira_extra_taxable,row.tax.adjusted_gross_income,
             row.tax.standard_plus_age_deduction,row.tax.enhanced_senior_deduction,row.tax.ordinary_taxable,
@@ -163,11 +171,13 @@ async function main() {
   const context=await browser.newContext({offline:true}), page=await context.newPage();
   const invalidCases=[['invalid-json','{'],['empty',JSON.stringify({plans:[],results:[],verification:[],labels:[]})],['failed-verification',JSON.stringify({...payload,verification:payload.verification.map(v=>({...v,passed:false}))})]];
   for(const scenario of payload.results.keys()) for(const laterYear of [false,true]) {
-    for(const target of ['chart','tax-detail']) {
+    for(const target of ['chart','tax-detail','rule-basis']) {
       const broken=JSON.parse(JSON.stringify(payload));
       const result=broken.results[scenario], year=laterYear?result.deterministic_annual_ledger.rows.length-1:0;
       if(target==='chart')result.annual_real_percentiles[year].p50='invalid';
-      else result.deterministic_annual_ledger.rows[year].tax.ordinary_tax='invalid';
+      else if(target==='tax-detail')result.deterministic_annual_ledger.rows[year].tax.ordinary_tax='invalid';
+      // A projected year relabeled as published law must not render.
+      else Object.assign(result.deterministic_annual_ledger.rows[year].rule_basis.income_tax_tables,{status:'published',multiplier:1});
       invalidCases.push([`${target}-${scenario}-${year}`,JSON.stringify(broken)]);
     }
   }

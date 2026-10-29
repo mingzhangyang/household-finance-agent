@@ -120,6 +120,33 @@ if (invalidMode === 'numeric-mutations') {
   console.log(`PASS: ${cases} malformed numeric fields rejected before any scenario rendering`);
   process.exit(0);
 }
+if (invalidMode === 'rule-basis-mutations') {
+  // A projection may never be shown as published law; malformed labels fail closed.
+  let cases=0;
+  const mutations=[
+    basis=>{basis.income_tax_tables.status='published';basis.income_tax_tables.multiplier=1},
+    basis=>{basis.oasdi_wage_base.status='projected'},
+    basis=>{basis.income_tax_tables.status='enacted'},
+    basis=>{basis.income_tax_tables.base_year='2026'},
+    basis=>{basis.income_tax_tables.base_year=2099},
+    basis=>{basis.elective_deferral_limit.multiplier='1.02'},
+    basis=>{basis.elective_deferral_limit.multiplier=0},
+    basis=>{basis.oasdi_wage_base.source_id=''},
+    basis=>{delete basis.elective_deferral_limit},
+    basis=>{basis.state_tax_tables=basis.income_tax_tables},
+  ];
+  for(const scenario of payload.results.keys()) for(const [index,mutate] of mutations.entries()) {
+    const broken=JSON.parse(raw);
+    mutate(broken.results[scenario].deterministic_annual_ledger.rows[0].rule_basis);
+    try {assertRejected(JSON.stringify(broken),true);}
+    catch(error){error.message=`scenario ${scenario}, mutation ${index}: ${error.message}`;throw error;}
+    cases++;
+  }
+  const missing=JSON.parse(raw);delete missing.results[0].deterministic_annual_ledger.rows.at(-1).rule_basis;
+  assertRejected(JSON.stringify(missing),true);cases++;
+  console.log(`PASS: ${cases} malformed or overstated rule-basis labels rejected before rendering`);
+  process.exit(0);
+}
 if (invalidMode === 'tax-method-text') {
   for(const method of ['ordinary_rate_cap','stacked_capital_gains']) {
     const changed=JSON.parse(raw);changed.results[0].deterministic_annual_ledger.rows[0].tax.income_tax_method=method;
@@ -167,11 +194,18 @@ const {element,context,downloads}=boot(raw);
     assert.equal(element('year-status').textContent, '出现资金/规则缺口');
     const notes=()=>element('year-notices').children.map(li=>li.textContent);
     assert.deepEqual(notes(), ['Roth 转换未执行：ira_a 计划转出 $1,000,000.00（insufficient source balance after RMD）']);
+    const basis=()=>element('year-rule-basis').children.map(li=>li.textContent);
+    const index=payload.plans[i].tax_policy.future_bracket_inflation;
+    assert.deepEqual(basis(), [
+      `所得税税阶、标准扣除与资本利得门槛：2026 年已公布数值 × ${(1+index).toFixed(8)}，按方案假设指数推算到 2027 年，不是已公布的 2027 年数值（brackets_standard_senior）`,
+      '社保工资上限：2027 年已公布数值（payroll_2027）',
+      `401(k) 基本缴款限额：2026 年已公布数值 × ${(1+index).toFixed(8)}，按方案假设指数推算到 2027 年，不是已公布的 2027 年数值（401k_elective_limit_2026）`]);
     // The fixture has only a skipped conversion in 2027 and is funded in 2028.
     element('year-select').value = '2028';
     element('year-select').onchange();
     assert.equal(element('year-status').textContent, '对账通过');
     assert.deepEqual(notes(), ['本年度没有提款限制、未执行的转换或 RMD 缺口。']);
+    assert.match(basis()[1], /^社保工资上限：2027 年已公布数值 × [0-9.]{10}，按方案假设指数推算到 2028 年，不是已公布的 2028 年数值（payroll_2027）$/);
     element('download-plan').click();
     element('download-json').click();
     const [plan, audit] = downloads.slice(-2);

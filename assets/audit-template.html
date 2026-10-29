@@ -37,7 +37,7 @@
 <main class="main"><header class="topline"><div><div class="eyebrow">HOUSEHOLD FINANCIAL PLAN · AUDITABLE</div><h1>家庭退休与现金流报告</h1><p class="lede">逐年可复算 · 规则可追溯 · 情景预计算 · 不把模型假设当成未来事实</p></div>
 <div class="actionrow"><button class="btn" id="download-json">导出审计 JSON</button><button class="btn" id="download-plan">导出方案 JSON</button><button class="btn" id="download-csv">导出逐年 CSV</button><button class="btn primary" id="print">打印 / PDF</button></div></header>
 <div class="warnings" role="note"><div class="warn-title">重要限定：这是受限模型，不是完整税务或投资建议</div>
-2026 联邦税法作为参考基线，之后年份的税阶按假设指数调整；不计算州税、NIIT 尚未覆盖的投资收入和扣除调整、税收抵免、IRMAA、死亡/遗属、SSA 福利公式等。模拟结果不等于真实退休成功概率。</div>
+各年度先用已公布的联邦数值；没有已公布数值的年份按方案假设的指数推算，并在年度审计中逐年标明；不计算州税、NIIT 尚未覆盖的投资收入和扣除调整、税收抵免、IRMAA、死亡/遗属、SSA 福利公式等。模拟结果不等于真实退休成功概率。</div>
 <section id="snapshot"><div class="panelheader"><div><h2>财务概览 <span class="small">/ Snapshot</span></h2><div class="subtitle">使用已由 Python 计算并经资金流对账的方案，不在浏览器重新实现税法。</div></div></div><div class="scenarios" id="scenario-buttons" role="group" aria-label="切换财务方案"></div>
 <div class="metrics"><div class="metric"><label>模拟路径满足全部支出及税务</label><strong id="metric-success">—</strong><em id="metric-ci">—</em></div><div class="metric"><label>期末资产中位数（2026 购买力）</label><strong id="metric-median">—</strong><em>不是未来财富保证</em></div><div class="metric"><label>首年联邦所得税估算</label><strong id="metric-tax">—</strong><em>另计工资税；非纳税申报金额</em></div><div class="metric"><label>确定性路径首次资金缺口</label><strong id="metric-first">—</strong><em>包含税款未支付、RMD 和转换缺口</em></div></div></section>
 <section class="split" id="retirement"><div class="panel"><div class="panelheader"><h2>退休资产趋势</h2><span class="minor">2026 REAL USD</span></div><p class="subtitle">蒙特卡洛 P10 / P50 / P90 资产分布，虚线为基准回报路径</p><div class="legend"><span><i class="key" style="background:#a7d2d5"></i> P10–P90</span><span><i class="key" style="background:#077f82"></i>中位数</span><span><i class="key" style="background:#b08857"></i>确定性</span></div><div class="chartframe"><svg id="asset-chart" viewBox="0 0 760 300" role="img" aria-label="资产价值随年份变化的 Monte Carlo 分布图"></svg></div><p class="chartmeta">图表为模型下的假设路径分布。中间年度分位数尚未经独立模型验证；同引擎重放只验证可复现性。没有校准过的市场预测意义。</p></div>
@@ -48,6 +48,7 @@
 <section class="panel" id="year-detail"><div class="panelheader"><h2 id="year-heading">年度逐项审计</h2><span class="pill" id="year-status">对账通过</span></div><p class="subtitle">可用下方数值独立重做每个年度的资产守恒；单位 USD 名义额，分项显示到美元分位。</p>
 <div class="detailsgrid"><div><h3>收支与税款</h3><dl id="income-details"></dl></div><div><h3>税务计算拆解</h3><dl id="tax-details"></dl></div></div>
 <hr class="thin"><h3>资金约束与规则提示</h3><p class="help">列出本年度模型没有使用或没有执行的项目：所有人未满 60 岁的退休账户不用于提款（未计算 10% 罚金或任何例外）、余额不足而未执行的 Roth 转换、未足额的 RMD。这是受限模型的处理方式，不表示现实中这些资金一定无法动用。</p><ul class="rulelist" id="year-notices"></ul>
+<hr class="thin"><h3>本年度规则依据</h3><p class="help">每类规则先用该年度已公布的数值；没有已公布数值的年份，以最近一个已公布年份为基础、按方案假设的年率推算，并标为推算。推算值不是已公布的税法或限额。</p><ul class="rulelist" id="year-rule-basis"></ul>
 <hr class="thin"><h3>所得税税阶逐条复算</h3><p class="help">普通所得税：各税阶纳税金额 × 税率逐条相加；资本利得税：比较优惠税率叠加与全部应税收入按普通税率计算的税额，采用较低结果；下表列出所选方法实际使用的税率。受限税法与未来税阶假设见下文。</p>
 <div class="detailsgrid"><div class="scrolltable" style="max-height:none"><table class="table"><thead><tr><th>普通所得税率</th><th>该税阶应税额</th><th>税额</th></tr></thead><tbody id="ordinary-brackets"></tbody></table></div><div class="scrolltable" style="max-height:none"><table class="table"><thead><tr><th>长期资本利得税率</th><th>该税阶应税额</th><th>税额</th></tr></thead><tbody id="capital-brackets"></tbody></table></div></div>
 <hr class="thin"><h3>账户级完整资金流</h3><p class="help">每行严格满足：期初 + 收益 + 存入 + RMD转入 + 转换转入 + 提款转入 + 外部净收入 − RMD转出 − 转换转出 − 额外提款 − 现金支出税款 = 期末。</p>
@@ -114,6 +115,18 @@ function validateReportData(data){
   }
   for(const row of rows){
    requireInteger(row.year);
+   // Each rule family is either this year's published values or a projection
+   // from an earlier published year; a projection never reads as published law.
+   const families=['income_tax_tables','oasdi_wage_base','elective_deferral_limit'];
+   if(!row.rule_basis||typeof row.rule_basis!=='object'||Object.keys(row.rule_basis).length!==families.length)throw Error('Invalid rule basis');
+   for(const family of families){
+    const basis=row.rule_basis[family];
+    if(!basis||typeof basis!=='object'||typeof basis.source_id!=='string'||!basis.source_id)throw Error('Invalid rule basis');
+    requireInteger(basis.base_year);requireNumber(basis.multiplier);
+    const published=basis.status==='published'&&basis.base_year===row.year&&basis.multiplier===1;
+    const projected=basis.status==='projected'&&basis.base_year<row.year&&basis.multiplier>0;
+    if(!published&&!projected)throw Error('Invalid rule basis');
+   }
    requireNumbers(row,['opening_total','investment_growth_total','wages_gross','wages_taxable',
     'pretax_contributions','social_security_gross','pension_gross','other_after_tax_income',
     'living_expenses_due','living_expenses_paid','unmet_spending','rmd_total','unmet_rmd',
@@ -199,6 +212,8 @@ function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.determi
  const tax=$('tax-details');tax.replaceChildren();td.forEach(([name,num,isText])=>tax.append(...numeric(name,num,isText)));
  const notices=$('year-notices');notices.replaceChildren();
  for(const text of yearNotices(r,row)){const li=document.createElement('li');li.textContent=text;notices.append(li)}
+ const basisList=$('year-rule-basis');basisList.replaceChildren();
+ for(const text of ruleBasisLines(row)){const li=document.createElement('li');li.textContent=text;basisList.append(li)}
  const taxLines=(id,lines)=>{const target=$(id);target.replaceChildren();for(const line of lines){const tr=document.createElement('tr');[pct(line.rate),full(line.taxable),full(line.tax)].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td)});target.append(tr)}};
  taxLines('ordinary-brackets',row.tax.ordinary_bracket_lines);
  taxLines('capital-brackets',row.tax.capital_gain_rate_lines);
@@ -222,6 +237,13 @@ function yearNotices(r,row){
  for(const item of row.rmd)if(Math.round(item.unmet*100)>0)items.push(`RMD 未足额：${item.account} 应提 ${full(item.required)}，实提 ${full(item.taken)}`);
  if(!items.length)items.push('本年度没有提款限制、未执行的转换或 RMD 缺口。');
  return items;
+}
+// Which published year each rule family uses; projections are named as such.
+function ruleBasisLines(row){
+ const names={income_tax_tables:'所得税税阶、标准扣除与资本利得门槛',oasdi_wage_base:'社保工资上限',elective_deferral_limit:'401(k) 基本缴款限额'};
+ return Object.entries(names).map(([family,name])=>{const basis=row.rule_basis[family];
+  return basis.status==='published'?`${name}：${basis.base_year} 年已公布数值（${basis.source_id}）`
+   :`${name}：${basis.base_year} 年已公布数值 × ${basis.multiplier.toFixed(8)}，按方案假设指数推算到 ${row.year} 年，不是已公布的 ${row.year} 年数值（${basis.source_id}）`});
 }
 function renderCashflow(r){const body=$('cashflow-rows'),select=$('year-select');body.replaceChildren();select.replaceChildren();for(const row of r.deterministic_annual_ledger.rows){const tr=document.createElement('tr');tr.dataset.year=row.year;const vals=[String(row.year),fmt(row.wages_gross),fmt(row.pretax_contributions),fmt(row.social_security_gross+row.pension_gross),fmt(row.living_expenses_due),fmt(row.tax_due_total),fmt(row.closing_total),fmt(row.unmet_spending+row.unpaid_tax+row.unmet_rmd)];for(const v of vals){let td=document.createElement('td');td.textContent=v;tr.append(td)}tr.addEventListener('click',()=>renderDetail(row.year));body.append(tr);const opt=document.createElement('option');opt.value=row.year;opt.textContent=row.year;select.append(opt)}select.onchange=()=>renderDetail(Number(select.value));renderDetail(selectedYear??r.deterministic_annual_ledger.rows[0].year)}
 function render(){try{renderChecked()}catch(error){failReport()}}

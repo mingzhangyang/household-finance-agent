@@ -18,9 +18,21 @@
 
 **Independent verifier copy.** `scripts/verify_outputs.py` retypes the 2026 values above (brackets, standard and age-65 deductions, gain zones, Social Security bases, enhanced senior deduction, FICA caps and rates, Additional Medicare thresholds, base elective limit) instead of importing `tax2026.py`. It also retypes the Uniform Lifetime Table and checks every RMD divisor against it. When a register value changes, change the engine and the verifier and record the source check; a one-sided change fails verification.
 
-## Hypothetical projection logic — not law
+## Published tax years and labeled projections — not law
 
-The model's nominal 2026 reference-year federal brackets and standard deduction are multiplied in later years by `(1+future_bracket_inflation)^(year-2026)`. This is a **user assumption**, not a prediction of enacted IRS guidance. SSA provisional-income thresholds are *not* inflated. For 2028+ payroll OASDI wage cap, assume 2027 official cap compounded by assumed growth. Every future-year result must be labeled as **projected federal tax estimate**, never as a real 2027+ tax return.
+Indexed amounts are kept per tax year, separately from projections, in `tax2026.PUBLISHED_*` (engine) and a retyped copy in `verify_outputs.py` (verifier):
+
+| Rule family | Published years | Source IDs | Contents |
+|---|---|---|---|
+| `income_tax_tables` | 2026 | `brackets_standard_senior` | Ordinary brackets, standard deduction, age-65 addition, 0%/15% gain zones |
+| `oasdi_wage_base` | 2026, 2027 | `payroll`, `payroll_2027` | Social Security wage base per person |
+| `elective_deferral_limit` | 2026 | `401k_elective_limit_2026` | Base §402(g) limit; catch-ups are rejected |
+
+For each family and year: a published year uses its own values (`published`, multiplier 1). A later year multiplies the **latest published year's** values by `(1+future_bracket_inflation)^(year-base_year)` and is labeled `projected`. Earlier or skipped years are rejected. This is a **user assumption**, not a prediction of IRS guidance: published amounts are rounded and index from different base years (see the [primary-document review](primary-source-review-2026-10-29.md)). Every row carries `rule_basis` (status, base year, multiplier, source ID per family) and `tax.policy`, which names the published year and, for a projection, says it is NOT published law. The report's year audit shows the same labels.
+
+Fixed statutory amounts are not indexed and are not projections: Publication 915 base amounts, NIIT and Additional Medicare thresholds, payroll rates, and the $6,000 enhanced senior deduction with its 6% phaseout, which the statute limits to 2025–2028. Projected years assume current statute continues.
+
+**Adding a newly published year** (for example the 2027 revenue procedure): read the official document, add the year to the engine registry and to the verifier's retyped copy with the same source ID, record the check here, and add a golden case from its printed tables. That year becomes `published`, and later years rebase on it, so results change: ship it as its own PR and regenerate reports. A change to one copy only fails verification (`tests/test_rule_years.py`).
 
 Salary deferrals are exempt from modeled ordinary federal income tax but NOT Social Security/Medicare payroll tax. Traditional IRA/401(k) RMDs and additional withdrawals are modeled as ordinary income. The Roth conversion is from fully pretax IRA to qualified Roth IRA belonging to the same person; no tax-free nondeductible IRA basis. IRS distributions, penalties and early RMD deferrals outside these cases are **not supported**.
 
