@@ -11,6 +11,8 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 "$PYTHON" scripts/audit_plan.py run examples/audited-household-2026.json --output "$TMP/result.json"
 "$PYTHON" scripts/verify_outputs.py "$TMP/result.json" --plan examples/audited-household-2026.json --engine-dir scripts --output "$TMP/verification.json"
 "$PYTHON" scripts/verify_replay.py "$TMP/result.json" --plan examples/audited-household-2026.json --output "$TMP/replay.json"
+"$PYTHON" scripts/audit_plan.py trace examples/audited-household-2026.json --path-index 17 --output "$TMP/trace17.json"
+"$PYTHON" scripts/verify_outputs.py "$TMP/trace17.json" --plan examples/audited-household-2026.json --trace --trace-result "$TMP/result.json" --output "$TMP/trace17-verification.json"
 "$PYTHON" scripts/market_history.py examples/nyu_2000_2018_partial.csv --horizon 10 --output "$TMP/market.json"
 "$PYTHON" scripts/render_audit.py examples/audited-household-2026.json --output "$TMP/report.html"
 test -s "$TMP/report.html"
@@ -25,7 +27,9 @@ p=Path(sys.argv[1])
 r=json.loads((p/'result.json').read_text())
 v=json.loads((p/'verification.json').read_text())
 m=json.loads((p/'market.json').read_text())
-assert v['passed'] and v['verified_engine_hash'] and v['verified_input_hash']
+t=json.loads((p/'trace17-verification.json').read_text())
+assert v['passed'] and v['verified_engine_hash'] and v['verified_input_hash'] and v['verified_plan_conventions']
+assert t['passed'] and t['returns_regenerated'] and t['manifest_entry_checked']
 assert len(r['simulated_path_manifest'])==r['trials']
 assert m['calibration']['observations']==19
 print('PASS: offline fictional household verification, tax/SSA and history smoke tests')

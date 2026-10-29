@@ -43,6 +43,8 @@ class ScopeContract(unittest.TestCase):
             lambda p: p['members'][0].update(birth_year=1950),
             lambda p: p['members'][0].update(death_year=2028),
             lambda p: p['members'][0].update(dividends=1),
+            # A pension amount must not silently start at a default age.
+            lambda p: p['members'][0].update(annual_pension_2026_real=1000),
             lambda p: p['accounts'][2].update(fully_pretax_confirmed=False),
             lambda p: p['accounts'][5].update(qualified_distributions_confirmed=False),
             lambda p: p.update(liabilities={'mortgage': 1}),

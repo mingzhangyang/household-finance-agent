@@ -78,16 +78,46 @@ class DeterministicFailureContract(unittest.TestCase):
                 result['deterministic_annual_ledger'].update(failed=status,first_failure_year=year)
                 with self.assertRaises(VerifyFailure): verify(result,plan)
 
+    def blocked_household(self,living,conversion):
+        # Owner is 47: retirement accounts cannot fund, so cash shortfalls are real.
+        plan=fixture()
+        plan['members'][0].update(annual_wages_2026=0,annual_pretax_401k_2026_real=0)
+        plan['accounts'][0]['balance']=0
+        plan['accounts'][3]['balance']=100000
+        plan['living_expenses_annual_real']=living
+        plan['roth_conversions']=[{'year':2027,'from':'ira','to':'roth','amount_nominal':conversion}] if conversion else []
+        return plan
+
     def test_every_annual_shortfall_contributes_to_failure_summary(self):
-        for field in ('unmet_spending','unpaid_tax','unmet_rmd'):
+        for field,plan in (('unmet_spending',self.blocked_household(60000,0)),
+                           ('unpaid_tax',self.blocked_household(0,50000))):
+            with self.subTest(field=field):
+                result=audit_plan.evaluate(plan)
+                summary=result['deterministic_annual_ledger']
+                self.assertGreater(summary['rows'][0][field],0)
+                self.assertTrue(verify(result,plan)['passed'])
+                summary.update(failed=False,first_failure_year=None)
+                with self.assertRaisesRegex(VerifyFailure,'failed summary'):
+                    verify(result,plan)
+        plan=fixture()
+        result=audit_plan.evaluate(plan)
+        # A one-cent RMD mutation remains within journal rounding tolerance,
+        # but must still invalidate the aggregate and failure summary.
+        result['deterministic_annual_ledger']['rows'][0]['unmet_rmd']=.01
+        with self.assertRaisesRegex(VerifyFailure,'RMD unmet aggregate'):
+            verify(result,plan)
+
+    def test_cent_shortfall_beside_remaining_cash_is_incoherent(self):
+        for field in ('unmet_spending','unpaid_tax'):
             with self.subTest(field=field):
                 plan=fixture()
                 result=audit_plan.evaluate(plan)
-                # A one-cent mutation remains within journal rounding tolerance,
-                # but must still invalidate a summary claiming no failed years.
-                result['deterministic_annual_ledger']['rows'][0][field]=.01
-                with self.assertRaisesRegex(VerifyFailure,'RMD unmet aggregate' if field=='unmet_rmd' else 'failed summary'):
-                    verify(result,plan)
+                row=result['deterministic_annual_ledger']['rows'][0]
+                self.assertGreater(row['closing_accounts']['cash'],.01)
+                row[field]=.01
+                for supplied in (None,plan):
+                    with self.assertRaisesRegex(VerifyFailure,'cash remained'):
+                        verify(result,supplied)
 
     def test_cent_rounding_policy_agrees_across_engine_manifest_and_verifier(self):
         for spending,failed in ((0,False),(.004,False),(.006,True),(.01,True)):
@@ -143,7 +173,8 @@ class IncomeReconstruction(unittest.TestCase):
     def test_all_supported_taxable_income_components(self):
         plan=fixture()
         plan['members'][0].update(birth_year=1951,retirement_age=90,
-            annual_pension_2026_real=20000,ss_annual_2026_real_at_chosen_claim_age=30000)
+            annual_pension_2026_real=20000,pension_start_age=65,
+            ss_annual_2026_real_at_chosen_claim_age=30000)
         plan['accounts'][1].update(balance=500000,basis=200000)
         plan['accounts'][2]['balance']=300000
         plan['accounts'][3]['balance']=500000

@@ -3,12 +3,12 @@ import copy
 import unittest
 from pathlib import Path
 
-from test_niit_integration import fixture
+from test_niit_integration import fixture,adverse_rmd_trace
 import audit_plan
 from social_security import (full_retirement_age_months,claiming_factor,
                              benefit_from_pia_at_claim,SSARuleError)
 from tax2026 import federal_tax
-from verify_outputs import verify,VerifyFailure
+from verify_outputs import verify,verify_trace,VerifyFailure
 
 SCRIPTS=Path(__file__).resolve().parents[1]/'scripts'
 
@@ -63,8 +63,10 @@ class OutputReviewChecks(unittest.TestCase):
         row['closing_accounts']['cash']+=380
         row['closing_total']+=380
         row['closing_total_real']+=380
-        # The coherent output still needs the supplied plan to expose the lie.
-        self.assertTrue(verify(result)['passed'])
+        # NIIT and cash stay coherent, but the retyped joint schedule exposes
+        # single-filer brackets even before the plan's policy anchor is used.
+        with self.assertRaisesRegex(VerifyFailure,'ordinary bracket 0 top'):
+            verify(result)
         with self.assertRaisesRegex(VerifyFailure,'tax policy mismatched'):
             verify(result,plan,SCRIPTS)
 
@@ -79,22 +81,26 @@ class OutputReviewChecks(unittest.TestCase):
                     verify(result,plan)
 
     def test_hidden_rmd_shortfall_rejected(self):
-        plan=fixture()
-        plan['members'][0].update(birth_year=1951,annual_wages_2026=0,
-                                  annual_pretax_401k_2026_real=0)
-        plan['accounts'][0]['balance']=1000000
-        plan['accounts'][3]['balance']=1000
-        result=audit_plan.evaluate(plan)
-        # A valid adverse annual ledger with an RMD exceeding post-loss assets.
-        result['deterministic_annual_ledger']=audit_plan.run_path(plan,[-.999])
-        summary=result['deterministic_annual_ledger']
+        # A valid adverse traced path with an RMD exceeding post-loss assets.
+        plan,path=adverse_rmd_trace()
+        summary=path['path_ledger']
         row=summary['rows'][0]
         self.assertGreater(row['unmet_rmd'],0)
         self.assertEqual(row['unmet_spending']+row['unpaid_tax'],0)
-        self.assertTrue(verify(result,plan,SCRIPTS)['passed'])
+        self.assertTrue(verify_trace(path,plan,audit_plan.evaluate(plan))['passed'])
         row['unmet_rmd']=0
         summary.update(failed=False,first_failure_year=None)
         with self.assertRaisesRegex(VerifyFailure,'RMD unmet aggregate'):
+            verify_trace(path,plan)
+
+    def test_adverse_ledger_cannot_replace_deterministic_path(self):
+        plan,path=adverse_rmd_trace()
+        result=audit_plan.evaluate(plan)
+        self.assertTrue(verify(result,plan,SCRIPTS)['passed'])
+        # Internally consistent, but not the plan's mean-return path.
+        result['deterministic_annual_ledger']=path['path_ledger']
+        self.assertTrue(verify(result,None,SCRIPTS)['passed'])
+        with self.assertRaisesRegex(VerifyFailure,'portfolio return of the plan path'):
             verify(result,plan,SCRIPTS)
 
     def test_rmd_aggregates_use_rounded_sum_of_unrounded_details(self):

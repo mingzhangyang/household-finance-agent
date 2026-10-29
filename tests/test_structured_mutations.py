@@ -130,17 +130,48 @@ class StructuredMutations(unittest.TestCase):
         with self.assertRaisesRegex(VerifyFailure,'annual_real_percentiles'):
             verify_replay(result,self.plan)
 
-    def test_consistent_income_relabeling_requires_replay(self):
+    def test_income_relabeling_without_payroll_change_is_rejected(self):
         result=copy.deepcopy(self.result)
         row=result['deterministic_annual_ledger']['rows'][0]
         row['wages_gross']-=100
         row['wages_taxable']-=100
         row['pension_gross']+=100
-        # Conservation/AGI still agree. Payroll-source and input timing truth
-        # are outside the output-only identities, exposed by whole-result replay.
-        self.assertTrue(verify(result,self.plan)['passed'])
-        with self.assertRaisesRegex(VerifyFailure,'wages_gross'):
+        # Conservation/AGI still agree, but FICA wages now exceed gross wages.
+        for plan in (None,self.plan):
+            with self.assertRaisesRegex(VerifyFailure,'OASDI wages exceed gross wages'):
+                verify(result,plan)
+        with self.assertRaises(VerifyFailure):
             verify_replay(result,self.plan)
+
+    def test_coherent_income_relabeling_requires_plan_schedule(self):
+        plan=copy.deepcopy(self.plan)
+        plan['end_year']=2027
+        result=evaluate(plan)
+        row=result['deterministic_annual_ledger']['rows'][0]
+        payroll=row['payroll_tax']
+        self.assertEqual(payroll['additional_medicare_tax'],0)
+        moved=100.
+        fica=moved*(.062+.0145)
+        row['wages_gross']-=moved
+        row['wages_taxable']-=moved
+        row['pension_gross']+=moved
+        payroll['oasdhi_taxable_wages_by_person'][0]-=moved
+        for key,change in (('social_security_tax',moved*.062),('medicare_tax',moved*.0145),('total',fica)):
+            payroll[key]=round(payroll[key]-change,2)
+        for key in ('tax_due_total','tax_paid'):
+            row[key]=round(row[key]-fica,2)
+        row['account_flows']['cash']['cash_tax_and_spending_outflow']-=fica
+        row['closing_accounts']['cash']=round(row['closing_accounts']['cash']+fica,2)
+        row['closing_total']=round(row['closing_total']+fica,2)
+        row['closing_total_real']=round(row['closing_total']/row['inflation_factor'],2)
+        # Every output-only identity and worksheet step still agrees: income tax
+        # treats wages and pension alike. Only the plan's schedule exposes it.
+        self.assertTrue(verify(result)['passed'])
+        with self.assertRaisesRegex(VerifyFailure,'wages scheduled by plan'):
+            verify(result,plan)
+        # Replay first runs the verifier with the plan, then the full comparison.
+        with self.assertRaisesRegex(VerifyFailure,'wages scheduled by plan'):
+            verify_replay(result,plan)
 
     def test_clean_replay_is_not_labeled_independent(self):
         status=verify_replay(self.result,self.plan)

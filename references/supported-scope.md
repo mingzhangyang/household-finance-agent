@@ -23,10 +23,10 @@ not proof of real-world applicability.
 | Accounts | Exactly one cash, at most one taxable, owned traditional IRA / 401(k) / Roth IRA | kind, owner and withdrawal-order checks |
 | Traditional accounts | Limited: entirely pretax, uniform RMD table, no still-working exception | affirmative confirmations; no inherited accounts or Form 8606 basis |
 | Roth | Limited: user affirmatively assumes qualified distributions; no qualification calculation | qualified_distributions_confirmed |
-| Early distributions | Rejected as a source of funding before whole-year age 60; other accounts may fund | run_path notices; resulting shortfall stays visible |
+| Early distributions | Rejected as a source of funding before whole-year age 60; other accounts may fund | run_path notices listed in the year audit; resulting shortfall stays visible |
 | Contributions | Limited: owned pretax 401(k), base elective limit hypothetically indexed, ≤wages | runtime contribution gate; no catch-up, match or IRA contribution |
 | Conversion | Limited: specified year and amount, same-owner traditional IRA → Roth | validation; unavailable source recorded as skipped and failed path |
-| Wages/pension | Limited: supplied wages/growth/retirement age; fully taxable pension indexed with assumed inflation | numeric validation; no self-employment/rental income |
+| Wages/pension | Limited: supplied wages/growth/retirement age; fully taxable pension indexed with assumed inflation, from an explicit start age | numeric validation; pension amount without start age rejected; no self-employment/rental income |
 | Social Security | Limited: supplied annual benefit in 2026 dollars for exact claim age 62–70; assumed inflation | basis required; work before FRA with benefits rejected |
 | Investments | Limited: cash interest; positive proportional long-term gains; common portfolio returns | basis and gain-treatment required; no dividends, loss offsets, lots |
 | NIIT | Limited: modeled cash interest + positive LTCG, MAGI=AGI, no adjustments | tax_extensions integration; test_niit_integration.py |

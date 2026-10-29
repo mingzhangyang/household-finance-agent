@@ -16,6 +16,8 @@
 | `rmd_uniform_lifetime` | Uniform Lifetime Table: age 73 divisor 26.5, age 74 25.5, age 75 24.6 etc.; prior December 31 balance / divisor | [IRS Publication 590-B](https://www.irs.gov/publications/p590b) | Only original owner, applicable uniform table, fully pretax retirement holdings |
 | `rmd_birth_1959` | Birth 1951–1959: RMD starting age 73; born >=1960: age 75; 1959 cohort has historically ambiguous SECURE 2.0 wording | [IRS 2024 proposed rules](https://www.irs.gov/irb/2024-33_IRB); [2025 CRS analysis](https://www.congress.gov/crs_external_products/RL/PDF/RL34397/RL34397.37.pdf) | Flag 1959 for human review when material |
 
+**Independent verifier copy.** `scripts/verify_outputs.py` retypes the 2026 values above (brackets, standard and age-65 deductions, gain zones, Social Security bases, enhanced senior deduction, FICA caps and rates, Additional Medicare thresholds, base elective limit) instead of importing `tax2026.py`. When a register value changes, change the engine and the verifier and record the source check; a one-sided change fails verification. The RMD divisor table is not duplicated in the verifier.
+
 ## Hypothetical projection logic — not law
 
 The model's nominal 2026 reference-year federal brackets and standard deduction are multiplied in later years by `(1+future_bracket_inflation)^(year-2026)`. This is a **user assumption**, not a prediction of enacted IRS guidance. SSA provisional-income thresholds are *not* inflated. For 2028+ payroll OASDI wage cap, assume 2027 official cap compounded by assumed growth. Every future-year result must be labeled as **projected federal tax estimate**, never as a real 2027+ tax return.

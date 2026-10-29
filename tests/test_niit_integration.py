@@ -39,6 +39,21 @@ def fixture():
     p['assumptions']['trials']=3
     return p
 
+def adverse_rmd_trace():
+    """A real seeded path whose first return hits the -99.9% floor, so the
+    age-76 IRA cannot cover its RMD. Shared by RMD shortfall regressions."""
+    p=fixture()
+    p['members'][0].update(birth_year=1951,annual_wages_2026=0,annual_pretax_401k_2026_real=0)
+    p['accounts'][0]['balance']=1000000
+    p['accounts'][3]['balance']=1000
+    p['assumptions'].update(equity_weight=1,equity_mean=-.5,equity_volatility=.7,
+                            annual_investment_fee=0,trials=20)
+    for index in range(p['assumptions']['trials']):
+        path=audit_plan.trace(p,index)
+        if path['annual_returns'][0]==-.999:
+            return p,path
+    raise AssertionError('seed produced no floored path')
+
 class NIITIntegration(unittest.TestCase):
     def test_irs_lesser_of_calculation(self):
         self.assertAlmostEqual(net_investment_income_tax(
