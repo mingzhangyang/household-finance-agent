@@ -2,6 +2,30 @@
 
 This is a repeatable QA record, not an independent CPA/CFP attestation. Execute the entire test suite and save the generated result and verifier JSON before claiming any count of passing tests. Output in `model_validation_report.md` outside the skill contains the latest complete fixture-specific numbers.
 
+## M2 group 1: taxable brokerage account (2026-10-29)
+
+Local results on branch `claude/epic-maxwell-5xrz9u`; not a GitHub Actions run or professional review.
+Details in the [handover](handover-2026-10-29-taxable-account.md).
+
+- `sh scripts/verify_local.sh`: **233 tests**; the 40-year / 300-path example (now with a
+  distributions-treatment brokerage account) receives **6,868 verifier assertions**; exact
+  replay passed; traced path 17 passed (6,880 assertions).
+- `python scripts/verify_m1_cases.py`: **6 cases / 14 years / 818 comparisons** passed; the two
+  new taxable-account cases (144 and 75 comparisons) matched on the first engine run.
+- Known answers: Pub 550 Bob and Shelly ($7,000 loss, $26,000 taxable income → $3,000 deducted,
+  $4,000 carried); the Form 1040 capital gain worksheet for 2026 single values ($7,187.50);
+  Pub 915 line 3 with dividends and a loss; the carryover worksheet's short/long split checked
+  on 2,000 random cases to give the statutory total.
+- Seeded sweeps (`HFA_VERIFIER_FUZZ_PLANS=500`, seeds 7, 8, 9; half the generated plans use the
+  new treatment with random yields and carryovers): 1,460 valid results and 5,840 traced paths
+  passed; all 56,299 single-field mutations were rejected. Earlier 1,000-plan sweeps of the same
+  seeds exposed two verifier gaps (cent tolerances on loss-year taxable income; a whole-basis
+  loss on a cents-sized account), both fixed before the final runs.
+- Legacy plans: the example, the four earlier M1 cases and four variants give identical results
+  and traces on the previous and the new engine, apart from added fields and text.
+- Real Chromium (Playwright 1.56.1, Chromium 153.0.8010.12, Noto CJK): **44 checks passed**,
+  including the new taxable-account block for every year of every scenario at both viewports.
+
 ## PR #10 second review round (2026-10-29)
 
 Copilot's second review and a follow-up self-review; local results.

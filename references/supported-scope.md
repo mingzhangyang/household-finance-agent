@@ -34,8 +34,9 @@ not proof of real-world applicability.
 | Conversion | Limited: specified year and amount, same-owner traditional IRA → Roth | validation; unavailable source recorded as skipped and failed path |
 | Wages/pension | Limited: supplied wages/growth/retirement age; fully taxable pension indexed with assumed inflation, from an explicit start age | numeric validation; pension amount without start age rejected; no self-employment/rental income |
 | Social Security | Limited: supplied annual benefit in 2026 dollars for exact claim age 62–70; assumed inflation | basis required; work before FRA with benefits rejected |
-| Investments | Limited: cash interest; positive proportional long-term gains; common portfolio returns | basis and gain-treatment required; no dividends, loss offsets, lots |
-| NIIT | Limited: modeled cash interest + positive LTCG, MAGI=AGI, no adjustments | tax_extensions integration; test_niit_integration.py |
+| Taxable account (M2 group 1) | Limited: `long_term_proportional_with_distributions` requires stated qualified/non-qualified dividend, interest and capital gain distribution yields (0 allowed, never assumed) on the prior Dec 31 balance, reinvested; proportional average basis; every sale and distribution long-term; losses recognized, $3,000 limit, carryover with the section 151 add-back (reviewer to confirm); `capital_loss_carryover_into_2027` required. Legacy `long_term_proportional_no_loss_offset` (no distributions, losses ignored, no positive carryover) kept for replay only, not for professional use. No lots, wash sales, return of capital, box 2b–2d gains, §199A, foreign tax credit | validation; test_taxable_account.py; two M1 cases |
+| Investments | Limited: cash interest; common portfolio returns | assumptions validated; no holdings model |
+| NIIT | Limited: interest, all ordinary dividends and Form 1040 line 7a, MAGI=AGI, no Form 8960 deductions | tax_extensions integration; test_niit_integration.py; M1 taxable-niit-loss-limit |
 | Spending/events | Supplied 2026-real recurring expenses; dated real/nominal expense or already-net income | event income explicitly net_after_all_taxes |
 | Debt | No amortization or net-worth claim; payments may be included in expenses | nonempty liabilities rejected |
 | Lifecycle | Rejected: death, survivor, divorce, membership/status transitions | unknown fields/event kinds rejected; reference modules not integrated |
@@ -80,7 +81,7 @@ what must be built; none changes the executable boundaries above until shipped.
 |---|---|---|
 | Audience | Professional-assisted use | Outputs stay `restricted_research` until gates pass; M5 adds issue log, rollback and reviewer trail |
 | Household, income, accounts (2a, 2d, 2e) | Unchanged baseline | Single/MFJ, birth 1951–2006, constant status; no self-employment, rental, inherited accounts, Form 8606 basis, match or catch-up |
-| Taxable brokerage (2c) | Supported | M2 group 1: annual dividends and interest, realized losses with the capital-loss limit and carryover, NIIT on them |
+| Taxable brokerage (2c) | Supported | M2 group 1 implemented 2026-10-29 (row above); professional review of the carryover add-back pending |
 | State tax (2b) | Maryland, with a jurisdiction interface for other states | M2 group 2: full-year residents, county/Baltimore City local tax required; unregistered states keep failing closed |
 | Social Security (3) | Rebuilt from the earnings record | M3: indexing, AIME, PIA, COLA, claiming adjustments, spouse/survivor; SSA statement estimates become an independent cross-check |
 | Delivery (5) | Agent Skill in Codex or Claude Code | Scripts run locally or in the host session; data the agent reads goes to the model provider; M5 covers that flow and a run in both hosts |

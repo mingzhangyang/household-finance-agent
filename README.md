@@ -59,8 +59,19 @@ On 2026-10-29 the scope owner recorded the launch decisions in the
 federal plus Maryland tax (other states kept pluggable), taxable brokerage accounts,
 Social Security rebuilt from the earnings record, and delivery as an agent Skill in
 Codex or Claude Code. These are targets; the code still enforces the federal-only
-research scope in [supported scope](references/supported-scope.md) until each piece ships. Reviewers and the next maintainer should start from the
-[handover notes](references/handover-2026-10-29-rule-years.md).
+research scope in [supported scope](references/supported-scope.md) until each piece ships.
+
+M2 group 1 (taxable brokerage account) ships under output contract 1.2. A taxable account
+labeled `long_term_proportional_with_distributions` states its qualified and non-qualified
+dividend, interest and capital gain distribution yields (zero allowed, never assumed); they
+are taxed every year and reinvested into basis. Sales recognize losses; a net capital loss
+is deductible up to $3,000 and the rest carries over under IRC 1212(b), which adds back the
+2025–2028 senior deduction (flagged for the professional reviewer). Qualified dividends take
+the preferential rates, and NIIT includes interest, dividends and the allowed loss. Rules were
+read from the [primary documents](references/primary-source-review-2026-10-29-taxable-account.md);
+the verifier recomputes every step and two new independent Decimal cases match. Plans that keep
+the legacy label produce unchanged numbers. Maryland state tax (M2 group 2) is next. See the
+[handover notes](references/handover-2026-10-29-taxable-account.md). Earlier handover: [rule years](references/handover-2026-10-29-rule-years.md).
 
 ## Installing the Skill
 
@@ -104,13 +115,13 @@ Each scenario's exact plan (including seed and return assumptions) is embedded i
 - Apply 2026 official federal tax brackets, standard deductions and extra-senior-deduction assumptions, Social Security taxation, stacked long-term capital-gains rates, FICA, 2027 published Social Security wage base, uniform lifetime RMDs, 401(k) pre-tax deferrals and limited IRA-to-Roth conversions.
 - Model cash/retirement-account transfers separately from external spending and tax flows; write double-entry conservation journal, tax-bracket breakdown and per-account residual per year.
 - Use seeded two-asset correlated Gaussian Monte Carlo (unvalidated returns) with a path manifest, deterministic replay, Wilson sampling interval and code/input SHA256 identifiers.
-- NIIT 3.8% is included in annual cash-funding and taxable dispositions, with modeled NII limited to bank interest and positive long-term realized gains. The verifier independently checks its income base and rate. The IRS $250k joint / $200k single MAGI thresholds are not inflated.
+- NIIT 3.8% is included in annual cash-funding and taxable dispositions, with modeled NII = interest, ordinary dividends and the Form 1040 line 7a capital gain or allowed loss. The verifier independently checks its income base and rate. The IRS $250k joint / $200k single MAGI thresholds are not inflated.
 - The 2026 extra senior deduction phases out each eligible person’s $6,000 by 6% of joint MAGI over $150k before summing: two eligible spouses receive $10,800 at $160k MAGI and $0 at $250k.
 - `verify_outputs.py` is a separately implemented output-only verifier; it recomputes arithmetic and the restricted worksheet steps from JSON and retyped register values without importing the main engine. Tampering tests intentionally change results, including coherent multi-field forgeries, to confirm detection.
 
 ## Limits and status
 
-**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT treatment for dividends/passive income or foreign exclusion, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Each year uses published federal values where they exist (2026 income-tax tables; 2026 and 2027 OASDI wage bases; 2026 elective limit); other years **project the latest published values at a hypothetical rate** and every row labels them `projected` in `rule_basis`. Projections are not enacted future tax law. Some yearly timing conventions use year-end approximations.
+**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT on passive income, Form 8960 deductions or foreign exclusion, tax lots or wash sales, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Each year uses published federal values where they exist (2026 income-tax tables; 2026 and 2027 OASDI wage bases; 2026 elective limit); other years **project the latest published values at a hypothetical rate** and every row labels them `projected` in `rule_basis`. Projections are not enacted future tax law. Some yearly timing conventions use year-end approximations.
 
 The legacy v1 engine and its browser suite are not present in this checkout. The v2.2 commands above refer to the actual checked-in engine.
 

@@ -103,6 +103,8 @@ class StructuredMutations(unittest.TestCase):
                 pointers += [f'/accounts/{i}/basis' for i,a in enumerate(plan['accounts']) if a['kind']=='taxable']
                 pointers += [f'/members/{i}/{field}' for i in range(len(plan['members']))
                              for field in ('annual_wages_2026','ss_annual_2026_real_at_chosen_claim_age')]
+                # A stated prior-year carryover is a documented tax fact (Schedule D).
+                pointers += ['/capital_loss_carryover_into_2027'] if 'capital_loss_carryover_into_2027' in plan else []
                 plan['input_provenance']['register']=[dict(json_pointer=p,evidence_id='fictional-test',
                     source_type='fictional_fixture',confidence='documented',as_of_date='2026-01-01') for p in pointers]
             result=evaluate(plan)

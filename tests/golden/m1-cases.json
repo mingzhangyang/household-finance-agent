@@ -2,7 +2,7 @@
   "version": 1,
   "classification": "fictional_only",
   "review_status": "engineering_reference_not_professionally_reviewed",
-  "conventions": "2027 onward uses hypothetical 2026 federal rates: frozen in the zero-return cases and indexed 2% per year in growth-indexing; zero or stated returns/inflation; whole-year events; no state tax. Not future enacted law.",
+  "conventions": "2027 onward uses hypothetical 2026 federal rates: frozen in the zero-return cases and indexed 2% per year in growth-indexing; zero or stated returns/inflation; whole-year events; no state tax. Not future enacted law. The two taxable-account cases reinvest stated distribution yields and apply the capital-loss limit and carryover.",
   "monetary_absolute_tolerance": "0.01 USD per field; failure year and status exact",
   "cases": [
     {
@@ -397,6 +397,162 @@
           "equity_bond_correlation": 0,
           "annual_investment_fee": 0.01,
           "cash_yield": 0.02,
+          "trials": 2,
+          "seed": 42
+        },
+        "input_provenance": {
+          "mode": "fictional_demo",
+          "register": []
+        }
+      }
+    },
+    {
+      "id": "taxable-distributions-carryover",
+      "plan": {
+        "version": "2.0",
+        "name": "Fictional M1: taxable distributions, loss limit and carryover",
+        "currency": "USD",
+        "as_of_year": 2026,
+        "opening_balance_status": "projected_2026_12_31",
+        "end_year": 2028,
+        "members": [
+          {
+            "id": "retiree",
+            "birth_year": 1957,
+            "retirement_age": 60,
+            "annual_wages_2026": 0,
+            "wage_growth": 0,
+            "ss_claim_age": 70,
+            "ss_annual_2026_real_at_chosen_claim_age": 0,
+            "ss_estimate_basis": "2026_real_at_selected_claim_age",
+            "annual_pension_2026_real": 40000,
+            "pension_start_age": 60
+          }
+        ],
+        "accounts": [
+          {
+            "id": "cash",
+            "kind": "cash",
+            "balance": 0
+          },
+          {
+            "id": "taxable",
+            "kind": "taxable",
+            "balance": 200000,
+            "basis": 260000,
+            "gain_treatment": "long_term_proportional_with_distributions",
+            "annual_distributions": {
+              "qualified_dividend_yield": 0.02,
+              "nonqualified_dividend_yield": 0.005,
+              "taxable_interest_yield": 0.01,
+              "capital_gain_distribution_yield": 0.005,
+              "handling": "reinvested"
+            }
+          }
+        ],
+        "tax_policy": {
+          "jurisdiction": "US_federal",
+          "reference_year": 2026,
+          "filing_status": "single",
+          "state_income_tax": "excluded_with_disclosure",
+          "future_bracket_inflation": 0
+        },
+        "living_expenses_annual_real": 60000,
+        "events": [],
+        "roth_conversions": [],
+        "terminal_target_2026_real": 0,
+        "capital_loss_carryover_into_2027": 5000,
+        "withdrawal_order": [
+          "cash",
+          "taxable"
+        ],
+        "assumptions": {
+          "inflation": 0,
+          "equity_weight": 1,
+          "equity_mean": 0.25,
+          "equity_volatility": 0,
+          "bond_mean": 0,
+          "bond_volatility": 0,
+          "equity_bond_correlation": 0,
+          "annual_investment_fee": 0,
+          "cash_yield": 0,
+          "trials": 2,
+          "seed": 42
+        },
+        "input_provenance": {
+          "mode": "fictional_demo",
+          "register": []
+        }
+      }
+    },
+    {
+      "id": "taxable-niit-loss-limit",
+      "plan": {
+        "version": "2.0",
+        "name": "Fictional M1: dividends, interest and allowed loss in NIIT",
+        "currency": "USD",
+        "as_of_year": 2026,
+        "opening_balance_status": "projected_2026_12_31",
+        "end_year": 2027,
+        "members": [
+          {
+            "id": "earner",
+            "birth_year": 1977,
+            "retirement_age": 65,
+            "annual_wages_2026": 300000,
+            "wage_growth": 0,
+            "ss_claim_age": 67,
+            "ss_annual_2026_real_at_chosen_claim_age": 0,
+            "ss_estimate_basis": "2026_real_at_selected_claim_age"
+          }
+        ],
+        "accounts": [
+          {
+            "id": "cash",
+            "kind": "cash",
+            "balance": 0
+          },
+          {
+            "id": "taxable",
+            "kind": "taxable",
+            "balance": 500000,
+            "basis": 600000,
+            "gain_treatment": "long_term_proportional_with_distributions",
+            "annual_distributions": {
+              "qualified_dividend_yield": 0.03,
+              "nonqualified_dividend_yield": 0,
+              "taxable_interest_yield": 0.01,
+              "capital_gain_distribution_yield": 0,
+              "handling": "reinvested"
+            }
+          }
+        ],
+        "tax_policy": {
+          "jurisdiction": "US_federal",
+          "reference_year": 2026,
+          "filing_status": "single",
+          "state_income_tax": "excluded_with_disclosure",
+          "future_bracket_inflation": 0
+        },
+        "living_expenses_annual_real": 300000,
+        "events": [],
+        "roth_conversions": [],
+        "terminal_target_2026_real": 0,
+        "capital_loss_carryover_into_2027": 0,
+        "withdrawal_order": [
+          "cash",
+          "taxable"
+        ],
+        "assumptions": {
+          "inflation": 0,
+          "equity_weight": 1,
+          "equity_mean": 0,
+          "equity_volatility": 0,
+          "bond_mean": 0,
+          "bond_volatility": 0,
+          "equity_bond_correlation": 0,
+          "annual_investment_fee": 0,
+          "cash_yield": 0,
           "trials": 2,
           "seed": 42
         },

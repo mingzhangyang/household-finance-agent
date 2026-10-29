@@ -63,7 +63,8 @@ class FailClosedInputs(unittest.TestCase):
             lambda p:p['accounts'][1].update(gain_treatment='short_term_lots'),
             # The legacy label models neither distributions nor losses.
             lambda p:p['accounts'][1].update(gain_treatment=LEGACY),
-            lambda p:(p['accounts'][1].update(gain_treatment=LEGACY),p['accounts'][1].pop('annual_distributions')),
+            lambda p:(p['accounts'][1].update(gain_treatment=LEGACY),p['accounts'][1].pop('annual_distributions'),
+                      p.update(capital_loss_carryover_into_2027=500)),
         ]
         for index,mutate in enumerate(mutations):
             with self.subTest(case=index):

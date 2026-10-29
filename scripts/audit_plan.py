@@ -232,7 +232,7 @@ def _validate(p):
             elif treatment==LEGACY_TAXABLE:
                 if 'annual_distributions' in acc:
                     raise ModelError(f'{aid}: legacy no-loss-offset treatment models no distributions; use {WITH_DISTRIBUTIONS}')
-                if 'capital_loss_carryover_into_2027' in p:
+                if p.get('capital_loss_carryover_into_2027',0)!=0:
                     raise ModelError('legacy no-loss-offset treatment cannot apply a capital loss carryover')
             else:
                 raise ModelError('taxable basis and an explicit long-term gain treatment required')

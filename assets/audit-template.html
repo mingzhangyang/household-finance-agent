@@ -37,7 +37,7 @@
 <main class="main"><header class="topline"><div><div class="eyebrow">HOUSEHOLD FINANCIAL PLAN · AUDITABLE</div><h1>家庭退休与现金流报告</h1><p class="lede">逐年可复算 · 规则可追溯 · 情景预计算 · 不把模型假设当成未来事实</p></div>
 <div class="actionrow"><button class="btn" id="download-json">导出审计 JSON</button><button class="btn" id="download-plan">导出方案 JSON</button><button class="btn" id="download-csv">导出逐年 CSV</button><button class="btn primary" id="print">打印 / PDF</button></div></header>
 <div class="warnings" role="note"><div class="warn-title">重要限定：这是受限模型，不是完整税务或投资建议</div>
-各年度先用已公布的联邦数值；没有已公布数值的年份按方案假设的指数推算，并在年度审计中逐年标明；不计算州税、NIIT 尚未覆盖的投资收入和扣除调整、税收抵免、IRMAA、死亡/遗属、SSA 福利公式等。模拟结果不等于真实退休成功概率。</div>
+各年度先用已公布的联邦数值；没有已公布数值的年份按方案假设的指数推算，并在年度审计中逐年标明；不计算州税、Form 8960 的投资费用扣除、税收抵免、IRMAA、死亡/遗属、SSA 福利公式等；应税账户的股息、利息和资本损失只在方案选用新口径时计算。模拟结果不等于真实退休成功概率。</div>
 <section id="snapshot"><div class="panelheader"><div><h2>财务概览 <span class="small">/ Snapshot</span></h2><div class="subtitle">使用已由 Python 计算并经资金流对账的方案，不在浏览器重新实现税法。</div></div></div><div class="scenarios" id="scenario-buttons" role="group" aria-label="切换财务方案"></div>
 <div class="metrics"><div class="metric"><label>模拟路径满足全部支出及税务</label><strong id="metric-success">—</strong><em id="metric-ci">—</em></div><div class="metric"><label>期末资产中位数（2026 购买力）</label><strong id="metric-median">—</strong><em>不是未来财富保证</em></div><div class="metric"><label>首年联邦所得税估算</label><strong id="metric-tax">—</strong><em>另计工资税；非纳税申报金额</em></div><div class="metric"><label>确定性路径首次资金缺口</label><strong id="metric-first">—</strong><em>包含税款未支付、RMD 和转换缺口</em></div></div></section>
 <section class="split" id="retirement"><div class="panel"><div class="panelheader"><h2>退休资产趋势</h2><span class="minor">2026 REAL USD</span></div><p class="subtitle">蒙特卡洛 P10 / P50 / P90 资产分布，虚线为基准回报路径</p><div class="legend"><span><i class="key" style="background:#a7d2d5"></i> P10–P90</span><span><i class="key" style="background:#077f82"></i>中位数</span><span><i class="key" style="background:#b08857"></i>确定性</span></div><div class="chartframe"><svg id="asset-chart" viewBox="0 0 760 300" role="img" aria-label="资产价值随年份变化的 Monte Carlo 分布图"></svg></div><p class="chartmeta">图表为模型下的假设路径分布。中间年度分位数尚未经独立模型验证；同引擎重放只验证可复现性。没有校准过的市场预测意义。</p></div>
@@ -47,6 +47,8 @@
 <div class="scrolltable"><table class="table"><thead><tr><th>年份</th><th>工资</th><th>税前缴款</th><th>社保+养老金</th><th>生活开销</th><th>应付税款</th><th>年末资产</th><th>缺口</th></tr></thead><tbody id="cashflow-rows"></tbody></table></div></section>
 <section class="panel" id="year-detail"><div class="panelheader"><h2 id="year-heading">年度逐项审计</h2><span class="pill" id="year-status">对账通过</span></div><p class="subtitle">可用下方数值独立重做每个年度的资产守恒；单位 USD 名义额，分项显示到美元分位。</p>
 <div class="detailsgrid"><div><h3>收支与税款</h3><dl id="income-details"></dl></div><div><h3>税务计算拆解</h3><dl id="tax-details"></dl></div></div>
+<hr class="thin"><h3>应税账户：分配、出售与资本损失</h3><p class="help">分配按上年 12 月 31 日余额乘以方案给定的收益率计算，当年计税并再投资计入成本；出售按平均成本比例计算收益或亏损，全部视为长期。净资本损失每年最多抵扣 $3,000，其余结转；结转按 IRC §1212(b) 以调整后应税所得判定。</p>
+<div class="detailsgrid"><div><h3>账户记录（1099-DIV 与出售）</h3><dl id="taxable-details"></dl></div><div><h3>Schedule D 与亏损结转</h3><dl id="schedule-d-details"></dl></div></div>
 <hr class="thin"><h3>资金约束与规则提示</h3><p class="help">列出本年度模型没有使用或没有执行的项目：所有人未满 60 岁的退休账户不用于提款（未计算 10% 罚金或任何例外）、余额不足而未执行的 Roth 转换、未足额的 RMD。这是受限模型的处理方式，不表示现实中这些资金一定无法动用。</p><ul class="rulelist" id="year-notices"></ul>
 <hr class="thin"><h3>本年度规则依据</h3><p class="help">每类规则先用该年度已公布的数值；没有已公布数值的年份，以最近一个已公布年份为基础、按方案假设的年率推算，并标为推算。推算值不是已公布的税法或限额。</p><ul class="rulelist" id="year-rule-basis"></ul>
 <hr class="thin"><h3>所得税税阶逐条复算</h3><p class="help">普通所得税：各税阶纳税金额 × 税率逐条相加；资本利得税：比较优惠税率叠加与全部应税收入按普通税率计算的税额，采用较低结果；下表列出所选方法实际使用的税率。受限税法与未来税阶假设见下文。</p>
@@ -94,6 +96,9 @@ function expectedRuleBasis(year,rate){
  }
  return basis;
 }
+// Taxable-account treatments the engine can report, with the year audit's description.
+function taxableTreatments(){return {long_term_proportional_with_distributions:'分配逐年计税，亏损可抵扣',
+ long_term_proportional_no_loss_offset:'旧版：不计分配，不抵亏损'};}
 function validateReportData(data){
  // Validate every scenario and year before rendering or registering exports.
  // The saved verification flag alone cannot establish JSON type integrity.
@@ -161,7 +166,17 @@ function validateReportData(data){
    }
    requireNumbers(row.tax,['taxable_social_security','adjusted_gross_income',
     'standard_plus_age_deduction','enhanced_senior_deduction','ordinary_taxable',
-    'long_term_gain_taxable','ordinary_tax','capital_gains_tax','federal_income_tax','niit_due','niit_tax_base']);
+    'long_term_gain_taxable','ordinary_tax','capital_gains_tax','federal_income_tax','niit_due','niit_tax_base',
+    'capital_loss_carryover_in','net_capital_gain_or_loss','capital_loss_deduction','capital_gain_or_loss_in_agi',
+    'preferential_income','capital_loss_used','capital_loss_carryover_out']);
+   // Adjusted taxable income for the carryover exists only in a net-loss year.
+   if(row.tax.capital_loss_adjusted_taxable_income!==null)requireNumber(row.tax.capital_loss_adjusted_taxable_income);
+   if(!row.taxable_accounts||typeof row.taxable_accounts!=='object'||Array.isArray(row.taxable_accounts))throw Error('Invalid taxable account records');
+   for(const [id,record] of Object.entries(row.taxable_accounts)){
+    if(!(id in row.closing_accounts)||!Object.hasOwn(taxableTreatments(),record&&record.gain_treatment))throw Error('Invalid taxable account record');
+    requireNumbers(record,['qualified_dividends','nonqualified_dividends','interest','capital_gain_distributions',
+     'reinvested_distributions','sale_proceeds','basis_sold','sale_gain_or_loss']);
+   }
    if(!['ordinary_rate_cap','stacked_capital_gains'].includes(row.tax.income_tax_method))throw Error('Invalid tax method');
    requireNumbers(row.payroll_tax,['total']);
    for(const key of ['ordinary_bracket_lines','capital_gain_rate_lines']){
@@ -225,8 +240,12 @@ function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.determi
  text('year-status',okay?'对账通过':'出现资金/规则缺口');$('year-status').className=okay?'pill':'pill warn';
  const details=[['期初全部账户',row.opening_total],['工资总额',row.wages_gross],['其中税前401(k)缴款（内部划转）',row.pretax_contributions],['社保金总额',row.social_security_gross],['退休金总额',row.pension_gross],['其他净收入',row.other_after_tax_income],['投资及现金收益',row.investment_growth_total],['应付生活开销',row.living_expenses_due],['实际生活支出',row.living_expenses_paid],['RMD（IRA/401k 转现金）',row.rmd_total],['Roth 转换（内部划转）',row.roth_converted],['已付联邦及工资税',row.tax_paid],['未支付税款',row.unpaid_tax],['未满足支出',row.unmet_spending],['期末全部账户',row.closing_total]];
  const inc=$('income-details');inc.replaceChildren();details.forEach(([name,num])=>inc.append(...numeric(name,num)));
- const td=[['所得税计算方法',row.tax.income_tax_method==='ordinary_rate_cap'?'普通税率上限（较低税额）':'资本利得优惠税率叠加',true],['W-2 应税工资',row.wages_taxable],['税务计算中社保应税部分',row.tax.taxable_social_security],['实际已实现长期收益',row.realized_ltcg],['税前账户额外提取',row.ira_extra_taxable],['AGI（受限项目）',row.tax.adjusted_gross_income],['标准及65岁以上扣除',row.tax.standard_plus_age_deduction],['额外老人扣除',row.tax.enhanced_senior_deduction],['应税普通收入',row.tax.ordinary_taxable],['已实现收益应税部分',row.tax.long_term_gain_taxable],['普通所得税',row.tax.ordinary_tax],['资本利得税',row.tax.capital_gains_tax],['NIIT（投资净所得附加税）',row.tax.niit_due],['NIIT 计算税基',row.tax.niit_tax_base],['工资税 / FICA',row.payroll_tax.total],['总应付税款',row.tax_due_total]];
+ const td=[['所得税计算方法',row.tax.income_tax_method==='ordinary_rate_cap'?'普通税率上限（较低税额）':'资本利得优惠税率叠加',true],['W-2 应税工资',row.wages_taxable],['税务计算中社保应税部分',row.tax.taxable_social_security],['出售确认的长期收益（亏损为负）',row.realized_ltcg],['税前账户额外提取',row.ira_extra_taxable],['AGI（受限项目）',row.tax.adjusted_gross_income],['标准及65岁以上扣除',row.tax.standard_plus_age_deduction],['额外老人扣除',row.tax.enhanced_senior_deduction],['应税普通收入',row.tax.ordinary_taxable],['优惠税率所得应税部分',row.tax.long_term_gain_taxable],['普通所得税',row.tax.ordinary_tax],['资本利得税',row.tax.capital_gains_tax],['NIIT（投资净所得附加税）',row.tax.niit_due],['NIIT 计算税基',row.tax.niit_tax_base],['工资税 / FICA',row.payroll_tax.total],['总应付税款',row.tax_due_total]];
  const tax=$('tax-details');tax.replaceChildren();td.forEach(([name,num,isText])=>tax.append(...numeric(name,num,isText)));
+ const taxableParts=taxableLines(row);
+ for(const [id,lines] of [['taxable-details',taxableParts.accounts],['schedule-d-details',taxableParts.schedule]]){
+  const list=$(id);list.replaceChildren();lines.forEach(([name,num,isText])=>list.append(...numeric(name,num,isText)));
+ }
  const notices=$('year-notices');notices.replaceChildren();
  for(const text of yearNotices(r,row)){const li=document.createElement('li');li.textContent=text;notices.append(li)}
  const basisList=$('year-rule-basis');basisList.replaceChildren();
@@ -244,16 +263,39 @@ function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.determi
  for(const tr of $('cashflow-rows').querySelectorAll('tr[data-year]'))tr.classList.toggle('selected',Number(tr.dataset.year)===year);
  $('year-select').value=String(year);
  }
-// Engine records only: blocked-account messages, skipped conversions and
-// cent-visible unmet RMDs. No new amounts are derived here.
+// Engine records only: blocked-account messages, skipped conversions,
+// cent-visible unmet RMDs, sale losses the legacy treatment ignores, and the
+// carryover reading that awaits review. No new amounts are derived here.
 function yearNotices(r,row){
  const items=[];
  const notice=r.deterministic_annual_ledger.notices.find(n=>n.year===row.year);
  if(notice)for(const block of notice.blocks)items.push('未满 60 岁账户未用于支付：'+block);
  for(const skipped of row.skipped_conversions)items.push(`Roth 转换未执行：${skipped.from} 计划转出 ${full(skipped.amount)}（${skipped.reason}）`);
  for(const item of row.rmd)if(Math.round(item.unmet*100)>0)items.push(`RMD 未足额：${item.account} 应提 ${full(item.required)}，实提 ${full(item.taken)}`);
+ for(const [id,record] of Object.entries(row.taxable_accounts))
+  if(record.gain_treatment==='long_term_proportional_no_loss_offset'&&Math.round(record.sale_gain_or_loss*100)<0)
+   items.push(`应税账户 ${id} 按旧版口径未确认出售亏损 ${full(-record.sale_gain_or_loss)}`);
+ if(row.tax.capital_loss_adjusted_taxable_income!==null&&row.tax.enhanced_senior_deduction>0)
+  items.push('资本损失结转按 IRC §1212(b) 加回 §151 老年人增强扣除计算；IRS 尚未发布适用于该年度的结转工作表，这一处理待复核人确认。');
  if(!items.length)items.push('本年度没有提款限制、未执行的转换或 RMD 缺口。');
  return items;
+}
+// Taxable-account records and the Schedule D steps, as reported by the engine.
+function taxableLines(row){
+ const lines=[],schedule=[];
+ for(const [id,record] of Object.entries(row.taxable_accounts)){
+  lines.push([`${id} 计算口径`,taxableTreatments()[record.gain_treatment],true],[`${id} 合格股息`,record.qualified_dividends],
+   [`${id} 非合格股息`,record.nonqualified_dividends],[`${id} 应税利息`,record.interest],
+   [`${id} 资本利得分配`,record.capital_gain_distributions],[`${id} 再投资计入成本`,record.reinvested_distributions],
+   [`${id} 出售所得`,record.sale_proceeds],[`${id} 出售对应成本`,record.basis_sold],[`${id} 出售收益或亏损`,record.sale_gain_or_loss]);
+ }
+ const t=row.tax;
+ schedule.push(['上年结转资本损失',t.capital_loss_carryover_in],['Schedule D 净收益或净亏损',t.net_capital_gain_or_loss],
+  ['本年抵扣的资本损失（上限 $3,000）',t.capital_loss_deduction],['计入 AGI 的资本利得或亏损（1040 第 7a 行）',t.capital_gain_or_loss_in_agi],
+  ['适用优惠税率的所得（合格股息 + 长期净收益）',t.preferential_income],
+  t.capital_loss_adjusted_taxable_income===null?['结转判定用调整后应税所得','本年无净资本损失',true]:['结转判定用调整后应税所得',t.capital_loss_adjusted_taxable_income],
+  ['本年视为已使用的资本损失',t.capital_loss_used],['结转至下年的资本损失',t.capital_loss_carryover_out]);
+ return {accounts:lines,schedule};
 }
 // Which published year each rule family uses; projections are named as such.
 function ruleBasisLines(row){
