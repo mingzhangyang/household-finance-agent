@@ -19,6 +19,15 @@ function signedZero(value) {
 }
 const dollars=(value,digits)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:digits,maximumFractionDigits:digits}).format(value);
 async function record(name, fn) {await fn(); status.checks.push({name,status:'passed'});}
+// Engine records the year audit must disclose verbatim; the page derives no amounts.
+function expectedNotices(result,row) {
+  const items=[];
+  const notice=result.deterministic_annual_ledger.notices.find(n=>n.year===row.year);
+  if(notice)for(const block of notice.blocks)items.push('未满 60 岁账户未用于支付：'+block);
+  for(const s of row.skipped_conversions)items.push(`Roth 转换未执行：${s.from} 计划转出 ${dollars(s.amount,2)}（${s.reason}）`);
+  for(const item of row.rmd)if(Math.round(item.unmet*100)>0)items.push(`RMD 未足额：${item.account} 应提 ${dollars(item.required,2)}，实提 ${dollars(item.taken,2)}`);
+  return items.length?items:['本年度没有提款限制、未执行的转换或 RMD 缺口。'];
+}
 async function main() {
   await fs.mkdir(output,{recursive:true});
   const {chromium} = require('playwright');
@@ -71,9 +80,11 @@ async function main() {
           const ui=await page.evaluate(()=>({
             heading:document.querySelector('#year-heading').textContent,
             tax:[...document.querySelectorAll('#tax-details dd')].map(x=>x.textContent),
+            notices:[...document.querySelectorAll('#year-notices li')].map(x=>x.textContent),
             accounts:[...document.querySelectorAll('#account-rows tr')].map(tr=>[...tr.cells].map(td=>td.textContent))
           }));
           assert.equal(ui.heading,`${row.year} 年度逐项审计`);
+          assert.deepEqual(ui.notices,expectedNotices(result,row));
           assert.deepEqual(ui.tax.slice(1),[row.wages_taxable,row.tax.taxable_social_security,
             row.realized_ltcg,row.ira_extra_taxable,row.tax.adjusted_gross_income,
             row.tax.standard_plus_age_deduction,row.tax.enhanced_senior_deduction,row.tax.ordinary_taxable,
@@ -160,6 +171,18 @@ async function main() {
       invalidCases.push([`${target}-${scenario}-${year}`,JSON.stringify(broken)]);
     }
   }
+  await record('notice records render in a real browser',async()=>{
+    // Rendering only: inject one engine-shaped notice and skipped conversion.
+    const shaped=JSON.parse(JSON.stringify(payload)), result=shaped.results[0], row=result.deterministic_annual_ledger.rows[0];
+    result.deterministic_annual_ledger.notices=[{year:row.year,blocks:['ira: early distributions before 60 not modeled']}];
+    row.skipped_conversions=[{year:row.year,from:'ira',amount:1000,reason:'insufficient source balance after RMD'}];
+    const file=path.join(output,'notice-rendering.html');
+    await fs.writeFile(file,html.replace(/(<script id="data" type="application\/json">)[\s\S]*?(<\/script>)/,(_,start,end)=>start+JSON.stringify(shaped)+end));
+    await page.goto(pathToFileURL(file).href);
+    assert.equal(await page.locator('#report-error').isVisible(),false);
+    assert.deepEqual(await page.locator('#year-notices li').allTextContents(),expectedNotices(result,row));
+    assert.equal(await page.locator('#year-status').textContent(),'出现资金/规则缺口');
+  });
   for(const [name,raw] of invalidCases) {
     await record(`error state: ${name}`,async()=>{
       const broken=html.replace(/(<script id="data" type="application\/json">)[\s\S]*?(<\/script>)/,(_,start,end)=>start+raw+end);

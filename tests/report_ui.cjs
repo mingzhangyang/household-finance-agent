@@ -15,6 +15,13 @@ if (invalidMode === 'second-scenario') {
   const broken=JSON.parse(raw);broken.results[1].deterministic_annual_ledger.rows[0].tax.federal_income_tax='invalid';
   raw=JSON.stringify(broken);
 }
+if (['invalid-notice','invalid-skipped-conversion','invalid-rmd-record'].includes(invalidMode)) {
+  const broken=JSON.parse(raw), ledger=broken.results[2].deterministic_annual_ledger;
+  if(invalidMode==='invalid-notice')ledger.notices=[{year:ledger.rows[0].year,blocks:[1]}];
+  else if(invalidMode==='invalid-skipped-conversion')ledger.rows[0].skipped_conversions=[{from:'ira_a',amount:'1',reason:'test'}];
+  else ledger.rows[0].rmd=[{account:'ira_a',required:1,taken:'1',unmet:0}];
+  raw=JSON.stringify(broken);
+}
 if (['missing-plan-json','invalid-plan-json','mismatched-plan-json'].includes(invalidMode)) {
   const broken=JSON.parse(raw);
   if(invalidMode==='missing-plan-json')delete broken.plan_json;
@@ -119,6 +126,22 @@ if (invalidMode === 'tax-method-text') {
   console.log('PASS: explicit text-valued tax method remains supported');
   process.exit(0);
 }
+if (invalidMode === 'notices') {
+  // Fictional blocked early retirees: every scenario discloses the four skipped
+  // retirement accounts and the conversion that could not execute in 2027.
+  const {element,context}=boot(raw);
+  const notes=()=>element('year-notices').children.map(li=>li.textContent);
+  for (let i = 0; i < payload.plans.length; i++) {
+    element('scenario-buttons').children[i].click();
+    assert.equal(context.window.__financialAudit.getActive(), i);
+    assert.equal(element('year-status').textContent, '出现资金/规则缺口');
+    assert.deepEqual(notes(), [...['ira_a','401k_a','401k_b','roth_a'].map(id=>
+      `未满 60 岁账户未用于支付：${id}: early distributions before 60 not modeled`),
+      'Roth 转换未执行：ira_a 计划转出 $1,000,000.00（insufficient source balance after RMD）']);
+  }
+  console.log('PASS: blocked accounts and skipped conversions disclosed in every scenario');
+  process.exit(0);
+}
 if (invalidMode && invalidMode !== 'export-files') {
   assertRejected(raw,true);
   console.log('PASS: invalid report hides conclusions and disables exports: '+invalidMode);
@@ -137,10 +160,13 @@ const {element,context,downloads}=boot(raw);
       continue;
     }
     assert.equal(element('year-status').textContent, '出现资金/规则缺口');
+    const notes=()=>element('year-notices').children.map(li=>li.textContent);
+    assert.deepEqual(notes(), ['Roth 转换未执行：ira_a 计划转出 $1,000,000.00（insufficient source balance after RMD）']);
     // The fixture has only a skipped conversion in 2027 and is funded in 2028.
     element('year-select').value = '2028';
     element('year-select').onchange();
     assert.equal(element('year-status').textContent, '对账通过');
+    assert.deepEqual(notes(), ['本年度没有提款限制、未执行的转换或 RMD 缺口。']);
     element('download-plan').click();
     element('download-json').click();
     const [plan, audit] = downloads.slice(-2);

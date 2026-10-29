@@ -47,6 +47,7 @@
 <div class="scrolltable"><table class="table"><thead><tr><th>年份</th><th>工资</th><th>税前缴款</th><th>社保+养老金</th><th>生活开销</th><th>应付税款</th><th>年末资产</th><th>缺口</th></tr></thead><tbody id="cashflow-rows"></tbody></table></div></section>
 <section class="panel" id="year-detail"><div class="panelheader"><h2 id="year-heading">年度逐项审计</h2><span class="pill" id="year-status">对账通过</span></div><p class="subtitle">可用下方数值独立重做每个年度的资产守恒；单位 USD 名义额，分项显示到美元分位。</p>
 <div class="detailsgrid"><div><h3>收支与税款</h3><dl id="income-details"></dl></div><div><h3>税务计算拆解</h3><dl id="tax-details"></dl></div></div>
+<hr class="thin"><h3>资金约束与规则提示</h3><p class="help">列出本年度模型没有使用或没有执行的项目：所有人未满 60 岁的退休账户不用于提款（未计算 10% 罚金或任何例外）、余额不足而未执行的 Roth 转换、未足额的 RMD。这是受限模型的处理方式，不表示现实中这些资金一定无法动用。</p><ul class="rulelist" id="year-notices"></ul>
 <hr class="thin"><h3>所得税税阶逐条复算</h3><p class="help">普通所得税：各税阶纳税金额 × 税率逐条相加；资本利得税：比较优惠税率叠加与全部应税收入按普通税率计算的税额，采用较低结果；下表列出所选方法实际使用的税率。受限税法与未来税阶假设见下文。</p>
 <div class="detailsgrid"><div class="scrolltable" style="max-height:none"><table class="table"><thead><tr><th>普通所得税率</th><th>该税阶应税额</th><th>税额</th></tr></thead><tbody id="ordinary-brackets"></tbody></table></div><div class="scrolltable" style="max-height:none"><table class="table"><thead><tr><th>长期资本利得税率</th><th>该税阶应税额</th><th>税额</th></tr></thead><tbody id="capital-brackets"></tbody></table></div></div>
 <hr class="thin"><h3>账户级完整资金流</h3><p class="help">每行严格满足：期初 + 收益 + 存入 + RMD转入 + 转换转入 + 提款转入 + 外部净收入 − RMD转出 − 转换转出 − 额外提款 − 现金支出税款 = 期末。</p>
@@ -98,6 +99,11 @@ function validateReportData(data){
   requireArray(r.mc_sampling_wilson95,2);r.mc_sampling_wilson95.forEach(requireNumber);
   requireArray(r.terminal_real_p10_p50_p90,3);r.terminal_real_p10_p50_p90.forEach(requireNumber);
   requireFailureYear(r.deterministic_annual_ledger.first_failure_year);
+  requireArray(r.deterministic_annual_ledger.notices);
+  for(const notice of r.deterministic_annual_ledger.notices){
+   requireInteger(notice.year);requireArray(notice.blocks);
+   if(!notice.blocks.length||notice.blocks.some(block=>typeof block!=='string'||!block))throw Error('Invalid funding notice');
+  }
   for(const [j,band] of r.annual_real_percentiles.entries()){
    requireNumbers(band,['p10','p50','p90']);requireInteger(band.year);
    if(band.year!==rows[j].year)throw Error('Mismatched chart year');
@@ -110,6 +116,15 @@ function validateReportData(data){
     'roth_converted','realized_ltcg','ira_extra_taxable','tax_due_total','tax_paid','unpaid_tax',
     'closing_total','closing_total_real','reconciliation_residual']);
    requireArray(row.skipped_conversions);
+   for(const skipped of row.skipped_conversions){
+    if(typeof skipped.from!=='string'||typeof skipped.reason!=='string')throw Error('Invalid skipped conversion');
+    requireNumber(skipped.amount);
+   }
+   requireArray(row.rmd);
+   for(const item of row.rmd){
+    if(typeof item.account!=='string')throw Error('Invalid RMD record');
+    requireNumbers(item,['required','taken','unmet']);
+   }
    requireNumbers(row.tax,['taxable_social_security','adjusted_gross_income',
     'standard_plus_age_deduction','enhanced_senior_deduction','ordinary_taxable',
     'long_term_gain_taxable','ordinary_tax','capital_gains_tax','federal_income_tax','niit_due','niit_tax_base']);
@@ -171,12 +186,15 @@ function renderChart(r){const svg=$('asset-chart');svg.replaceChildren();
 function renderDetail(year){try{renderDetailChecked(year)}catch(error){failReport()}}
 function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.deterministic_annual_ledger.rows.find(q=>q.year===year);if(!row)return;
  text('year-heading',`${year} 年度逐项审计`);
- const okay=row.unmet_spending===0&&row.unpaid_tax===0&&row.unmet_rmd===0&&row.skipped_conversions.length===0&&row.reconciliation_residual===0;
+ // Same cent policy and $0.01 reconciliation gate as the engine and verifier.
+ const okay=row.unmet_spending===0&&row.unpaid_tax===0&&row.unmet_rmd===0&&row.skipped_conversions.length===0&&Math.abs(row.reconciliation_residual)<=.01;
  text('year-status',okay?'对账通过':'出现资金/规则缺口');$('year-status').className=okay?'pill':'pill warn';
  const details=[['期初全部账户',row.opening_total],['工资总额',row.wages_gross],['其中税前401(k)缴款（内部划转）',row.pretax_contributions],['社保金总额',row.social_security_gross],['退休金总额',row.pension_gross],['其他净收入',row.other_after_tax_income],['投资及现金收益',row.investment_growth_total],['应付生活开销',row.living_expenses_due],['实际生活支出',row.living_expenses_paid],['RMD（IRA/401k 转现金）',row.rmd_total],['Roth 转换（内部划转）',row.roth_converted],['已付联邦及工资税',row.tax_paid],['未支付税款',row.unpaid_tax],['未满足支出',row.unmet_spending],['期末全部账户',row.closing_total]];
  const inc=$('income-details');inc.replaceChildren();details.forEach(([name,num])=>inc.append(...numeric(name,num)));
  const td=[['所得税计算方法',row.tax.income_tax_method==='ordinary_rate_cap'?'普通税率上限（较低税额）':'资本利得优惠税率叠加',true],['W-2 应税工资',row.wages_taxable],['税务计算中社保应税部分',row.tax.taxable_social_security],['实际已实现长期收益',row.realized_ltcg],['税前账户额外提取',row.ira_extra_taxable],['AGI（受限项目）',row.tax.adjusted_gross_income],['标准及65岁以上扣除',row.tax.standard_plus_age_deduction],['额外老人扣除',row.tax.enhanced_senior_deduction],['应税普通收入',row.tax.ordinary_taxable],['已实现收益应税部分',row.tax.long_term_gain_taxable],['普通所得税',row.tax.ordinary_tax],['资本利得税',row.tax.capital_gains_tax],['NIIT（投资净所得附加税）',row.tax.niit_due],['NIIT 计算税基',row.tax.niit_tax_base],['工资税 / FICA',row.payroll_tax.total],['总应付税款',row.tax_due_total]];
  const tax=$('tax-details');tax.replaceChildren();td.forEach(([name,num,isText])=>tax.append(...numeric(name,num,isText)));
+ const notices=$('year-notices');notices.replaceChildren();
+ for(const text of yearNotices(r,row)){const li=document.createElement('li');li.textContent=text;notices.append(li)}
  const taxLines=(id,lines)=>{const target=$(id);target.replaceChildren();for(const line of lines){const tr=document.createElement('tr');[pct(line.rate),full(line.taxable),full(line.tax)].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td)});target.append(tr)}};
  taxLines('ordinary-brackets',row.tax.ordinary_bracket_lines);
  taxLines('capital-brackets',row.tax.capital_gain_rate_lines);
@@ -190,6 +208,17 @@ function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.determi
  for(const tr of $('cashflow-rows').querySelectorAll('tr[data-year]'))tr.classList.toggle('selected',Number(tr.dataset.year)===year);
  $('year-select').value=String(year);
  }
+// Engine records only: blocked-account messages, skipped conversions and
+// cent-visible unmet RMDs. No new amounts are derived here.
+function yearNotices(r,row){
+ const items=[];
+ const notice=r.deterministic_annual_ledger.notices.find(n=>n.year===row.year);
+ if(notice)for(const block of notice.blocks)items.push('未满 60 岁账户未用于支付：'+block);
+ for(const skipped of row.skipped_conversions)items.push(`Roth 转换未执行：${skipped.from} 计划转出 ${full(skipped.amount)}（${skipped.reason}）`);
+ for(const item of row.rmd)if(Math.round(item.unmet*100)>0)items.push(`RMD 未足额：${item.account} 应提 ${full(item.required)}，实提 ${full(item.taken)}`);
+ if(!items.length)items.push('本年度没有提款限制、未执行的转换或 RMD 缺口。');
+ return items;
+}
 function renderCashflow(r){const body=$('cashflow-rows'),select=$('year-select');body.replaceChildren();select.replaceChildren();for(const row of r.deterministic_annual_ledger.rows){const tr=document.createElement('tr');tr.dataset.year=row.year;const vals=[String(row.year),fmt(row.wages_gross),fmt(row.pretax_contributions),fmt(row.social_security_gross+row.pension_gross),fmt(row.living_expenses_due),fmt(row.tax_due_total),fmt(row.closing_total),fmt(row.unmet_spending+row.unpaid_tax+row.unmet_rmd)];for(const v of vals){let td=document.createElement('td');td.textContent=v;tr.append(td)}tr.addEventListener('click',()=>renderDetail(row.year));body.append(tr);const opt=document.createElement('option');opt.value=row.year;opt.textContent=row.year;select.append(opt)}select.onchange=()=>renderDetail(Number(select.value));renderDetail(selectedYear??r.deterministic_annual_ledger.rows[0].year)}
 function render(){try{renderChecked()}catch(error){failReport()}}
 function renderChecked(){const r=get(),yr=r.deterministic_annual_ledger.rows;

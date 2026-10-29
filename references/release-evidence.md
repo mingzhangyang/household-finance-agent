@@ -86,7 +86,7 @@ node tests/browser_acceptance.cjs /tmp/finance-evidence-run1/report.html /tmp/br
 The suite opens the generated report through `file://` with network offline, and
 records all attempted HTTP(S) requests as failures. It exercises all four scenarios
 at desktop (1440×1000) and mobile (390×844) viewport sizes, year selection, account
-details, chart paths, separated status labels, actual plan/JSON/CSV downloads,
+details, year-audit notice lists, chart paths, separated status labels, actual plan/JSON/CSV downloads,
 replay of downloaded plans/results, horizontal overflow, screenshots, print CSS and
 PDF output. It verifies invalid JSON, empty scenarios and failed-verification states
 hide conclusions and disable exports.
