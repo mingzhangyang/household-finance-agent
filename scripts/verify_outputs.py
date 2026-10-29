@@ -428,6 +428,9 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
         previous_accounts={a['id']:a['balance'] for a in plan['accounts']}
         previous_total=sum(previous_accounts.values())
         previous_basis={a['id']:a['basis'] for a in plan['accounts'] if a['kind']=='taxable'}
+        # IRA amounts retain sub-cent precision across years; exported balances do not.
+        unrounded_ira={a['id']:float(a['balance']) for a in plan['accounts']
+                       if a['kind']=='traditional_ira'}
     else:
         previous_accounts=ledger[0]['opening_accounts']
         previous_total=ledger[0]['opening_total']
@@ -496,12 +499,24 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
             for band,line in enumerate(row['tax'][field]):
                 close(line['tax'],line['taxable']*line['rate'],f'{y}: {field} {band} multiplication',.01)
                 checks+=1
-        close(row['tax']['ordinary_tax'],sum(z['tax'] for z in row['tax']['ordinary_bracket_lines']),f'{y}: ordinary brackets')
+        close(row['tax']['ordinary_tax'],sum(z['tax'] for z in row['tax']['ordinary_bracket_lines']),
+              f'{y}: ordinary brackets',.0051*(len(row['tax']['ordinary_bracket_lines'])+1))
         close(row['tax']['ordinary_taxable'],sum(z['taxable'] for z in row['tax']['ordinary_bracket_lines']),f'{y}: ordinary taxable coverage')
-        close(row['tax']['capital_gains_tax'],sum(z['tax'] for z in row['tax']['capital_gain_rate_lines']),f'{y}: gains brackets')
-        close(row['tax']['federal_income_tax'],row['tax']['ordinary_tax']+row['tax']['capital_gains_tax'],f'{y}: federal tax')
+        close(row['tax']['capital_gains_tax'],sum(z['tax'] for z in row['tax']['capital_gain_rate_lines']),
+              f'{y}: gains brackets',.0051*(len(row['tax']['capital_gain_rate_lines'])+1))
+        close(row['tax']['federal_income_tax'],row['tax']['ordinary_tax']+row['tax']['capital_gains_tax'],
+              f'{y}: federal tax',.0101)
         pf=row['payroll_tax']
-        close(pf['total'],pf['social_security_tax']+pf['medicare_tax']+pf['additional_medicare_tax'],f'{y}: payroll tax')
+        close(pf['total'],pf['social_security_tax']+pf['medicare_tax']+pf['additional_medicare_tax'],
+              f'{y}: payroll tax components',.0201)
+        # Component rounding can stack, but the total itself comes from unrounded
+        # statutory rates. Wages in the export are rounded to cents, bounding
+        # the reconstruction error to well below a cent for 1-2 filers.
+        payroll_from_bases=(sum(pf['oasdhi_taxable_wages_by_person'])*OASDI_RATE
+                            +row['wages_gross']*MEDICARE_RATE
+                            +pf['additional_medicare_taxable_wages']*EXTRA_MEDICARE_RATE)
+        close(pf['total'],payroll_from_bases,f'{y}: payroll tax total from wage bases',
+              .0071+1e-12*abs(payroll_from_bases))
         # Independent recomputation of statutory reference NIIT; no tax engine import.
         tax=row['tax']
         cash_interest=row['growth_by_account'][row['cash_account_id']]
@@ -520,8 +535,12 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
         close(tax['niit_net_investment_income'],row['realized_ltcg']+row['growth_by_account'][row['cash_account_id']],f'{y}: NIIT income')
         close(tax['niit_tax_base'],min(tax['niit_net_investment_income'],max(0.,tax['adjusted_gross_income']-tax['niit_threshold'])),f'{y}: NIIT base')
         close(tax['niit_due'],tax['niit_tax_base']*.038,f'{y}: NIIT due')
-        close(tax['total_federal_income_and_niit'],tax['federal_income_tax']+tax['niit_due'],f'{y}: federal/NIIT')
-        close(row['tax_due_total'],tax['total_federal_income_and_niit']+pf['total'],f'{y}: total due')
+        # Both totals combine two separately cent-rounded amounts, so a one-cent
+        # discrepancy is possible, but not a four-cent coordinated tax shortfall.
+        close(tax['total_federal_income_and_niit'],tax['federal_income_tax']+tax['niit_due'],
+              f'{y}: federal/NIIT',.0101)
+        close(row['tax_due_total'],tax['total_federal_income_and_niit']+pf['total'],
+              f'{y}: total due',.0101+1e-12*abs(row['tax_due_total']))
         # These sums gate the failure flag: each side is cent-rounded from an exact
         # unrounded identity, so they can differ by one cent, not five.
         close(row['tax_paid']+row['unpaid_tax'],row['tax_due_total'],f'{y}: unpaid tax',
@@ -569,7 +588,19 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
         _rule_checks(row,policy,plan,expect)
         if plan is not None:
             path_return=deterministic_return(plan) if returns is None else returns[index]
-            _plan_checks(row,plan,path_return,notices.get(y,[]),expect)
+            _plan_checks(row,plan,path_return,notices.get(y,[]),expect,unrounded_ira)
+            # Independently carry the unrounded IRA journal into the next year.
+            # This also anchors the conversion decision to the plan rather than
+            # to a rounded opening balance in the report.
+            for aid,opening in unrounded_ira.items():
+                flow=row['account_flows'][aid]
+                ending=(opening*(1+path_return)+flow['contribution']
+                        -flow['required_distribution']-flow['roth_conversion_out']
+                        -flow['optional_draw'])
+                expect(row['closing_accounts'][aid],ending,
+                       f'{y}: {aid} unrounded IRA closing continuity',
+                       .0051+1e-12*abs(ending))
+                unrounded_ira[aid]=ending
         previous_accounts=row['closing_accounts']
         previous_total=row['closing_total']
         previous_basis=row['taxable_basis_end']
@@ -660,6 +691,12 @@ def _journal_checks(row,previous_basis,expect):
                f'{y}: {aid} RMD taken as the lesser of required and the balance before conversions and draws',
                1e-9+1e-12*required if covered else .0101+1e-12*abs(available))
         expect(item['unmet'],required-item['taken'],f'{y}: {aid} unmet RMD as required less taken',1e-9+1e-12*required)
+    # A sale cannot realize more positive gain than its proceeds. This cap is
+    # independent of the proportional-basis tolerance, which may be very large
+    # for a cents-sized account with a substantial historical cost basis.
+    taxable_proceeds=sum(accounts[aid]['optional_draw'] for aid in row['taxable_basis_end'])
+    if row['realized_ltcg']>taxable_proceeds+.0051+1e-12*abs(taxable_proceeds):
+        raise VerifyFailure(f'{y}: realized gains exceed taxable-sale proceeds')
     # Average proportional basis: realized basis = draw x prior basis / value at sale.
     basis=row['taxable_basis_end']
     if previous_basis is None:
@@ -801,7 +838,7 @@ def _rule_checks(row,policy,plan,expect):
            f'{y}: Additional Medicare tax',.0052)
 
 
-def _plan_checks(row,plan,path_return,blocks,expect):
+def _plan_checks(row,plan,path_return,blocks,expect,unrounded_ira):
     """Plan-anchored conventions: timing, return, RMD activation, conversions, funding order."""
     y=row['year']
     accounts={a['id']:a for a in plan['accounts']}
@@ -855,16 +892,16 @@ def _plan_checks(row,plan,path_return,blocks,expect):
         source=request['from']
         amount=request['amount_nominal']
         if source not in available:
-            available[source]=(row['opening_accounts'][source]+row['growth_by_account'][source]
-                               -flows[source]['required_distribution'])
+            available[source]=(unrounded_ira[source]*(1+path_return)
+                               +flows[source]['contribution']-flows[source]['required_distribution'])
         if executed and executed[0]=={'from':source,'to':request['to'],'amount':amount}:
-            if available[source]+.011<amount:
+            if available[source]+1e-9<amount:
                 raise VerifyFailure(f'{y}: conversion exceeds the {source} balance left after RMD')
             available[source]-=amount
             executed.pop(0)
         elif (skipped and isinstance(skipped[0],dict) and isinstance(skipped[0].get('reason'),str)
               and {key:skipped[0].get(key) for key in ('year','from','amount')}=={'year':y,'from':source,'amount':amount}):
-            if available[source]-.011>=amount:
+            if available[source]+1e-9>=amount:
                 raise VerifyFailure(f'{y}: conversion skipped although {source} had the balance')
             skipped.pop(0)
         else:
