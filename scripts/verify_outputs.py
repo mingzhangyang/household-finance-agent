@@ -509,14 +509,6 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None):
         pf=row['payroll_tax']
         close(pf['total'],pf['social_security_tax']+pf['medicare_tax']+pf['additional_medicare_tax'],
               f'{y}: payroll tax components',.0201)
-        # Component rounding can stack, but the total itself comes from unrounded
-        # statutory rates. Wages in the export are rounded to cents, bounding
-        # the reconstruction error to well below a cent for 1-2 filers.
-        payroll_from_bases=(sum(pf['oasdhi_taxable_wages_by_person'])*OASDI_RATE
-                            +row['wages_gross']*MEDICARE_RATE
-                            +pf['additional_medicare_taxable_wages']*EXTRA_MEDICARE_RATE)
-        close(pf['total'],payroll_from_bases,f'{y}: payroll tax total from wage bases',
-              .0071+1e-12*abs(payroll_from_bases))
         # Independent recomputation of statutory reference NIIT; no tax engine import.
         tax=row['tax']
         cash_interest=row['growth_by_account'][row['cash_account_id']]
@@ -836,6 +828,13 @@ def _rule_checks(row,policy,plan,expect):
            f'{y}: Additional Medicare wages',.0101)
     expect(payroll['additional_medicare_tax'],payroll['additional_medicare_taxable_wages']*EXTRA_MEDICARE_RATE,
            f'{y}: Additional Medicare tax',.0052)
+    # The total payroll tax is derived from statutory rates, not merely the
+    # sum of independently rounded components. Run this after validating
+    # the wage bases so corrupt wages retain their more precise diagnostics.
+    payroll_from_bases=(sum(covered)*OASDI_RATE+row['wages_gross']*MEDICARE_RATE
+                        +payroll['additional_medicare_taxable_wages']*EXTRA_MEDICARE_RATE)
+    expect(payroll['total'],payroll_from_bases,f'{y}: payroll tax total from wage bases',
+           .0071+1e-12*abs(payroll_from_bases))
 
 
 def _plan_checks(row,plan,path_return,blocks,expect,unrounded_ira):
