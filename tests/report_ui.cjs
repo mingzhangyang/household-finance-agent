@@ -47,6 +47,9 @@ const element = id => {
   return elements.get(id);
 };
 element('data').textContent = raw;
+// The print labels reuse the real account table headings.
+const accountHead=html.match(/class="table account-ledger"><thead>([\s\S]*?)<\/thead>/)[1];
+element('account-rows').closest=()=>({tHead:{rows:[{cells:[...accountHead.matchAll(/<th>(.*?)<\/th>/g)].map(m=>({textContent:m[1]}))}]}});
 const context = vm.createContext({
   document: {
     getElementById: element,

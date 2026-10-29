@@ -23,6 +23,14 @@ Run `python scripts/collect_evidence.py --output /tmp/hfa-evidence --browser`
 from a clean checkout with Playwright/Chromium installed. Browser unavailability
 is recorded as failure; omitting `--browser` records `not_run`. Neither is a pass.
 
+The M1 acceptance follow-up adds [three independent combined cases](references/m1-acceptance.md)
+covering retirement/SS transitions, RMD/conversion/gains/NIIT, and account depletion
+over nine years. `python scripts/verify_m1_cases.py --output /tmp/m1-differences.json`
+records 461 field/shape comparisons against case-specific Decimal equations.
+CI installs pinned Playwright/Chromium and CJK fonts, then requires real desktop and
+mobile-viewport acceptance, actual downloads/replay and print output in the supervised
+evidence bundle. Physical devices, scope confirmation and professional sign-off remain pending.
+
 ## Canonical offline verification (free, no Actions quota)
 
 Run `sh scripts/verify_local.sh` from the repo. It checks syntax, all tracked Python tests, the 40-year fictional projection, 300 market paths, independent output verification, the historical return fixture and offline HTML generation. This does **not** mean external tax/SSA certification or complete model calibration. GitHub Actions may be unavailable because the owner's quota is exhausted; do not repeatedly retry billing-blocked jobs. Keep the PR in Draft until exact-head review is complete.

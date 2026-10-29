@@ -61,7 +61,17 @@ cover the verifier or presentation layer. Use the full bundle for release proven
 
 ## Real-browser runner
 
-Install a Playwright version supported by your environment and its Chromium binary.
+Install the pinned development-only Playwright version and its Chromium binary:
+
+```sh
+npm ci --ignore-scripts
+npx --no-install playwright install --with-deps chromium
+sudo apt-get install -y fonts-noto-cjk  # Linux Chinese screenshots/print
+```
+
+CI performs these steps and requires `--browser`; it also records the independent
+M1 combined-case differences in `independent-cases.json`. No package or font is
+embedded in, or fetched by, the offline financial report itself.
 Node must resolve `playwright` (`NODE_PATH` may point to an existing installation).
 `HFA_BROWSER_EXECUTABLE` optionally selects an already installed Chromium; the runner
 records the actual browser and Playwright versions. No npm install or browser download
