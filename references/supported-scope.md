@@ -72,4 +72,6 @@ age-specific SS estimates, offline-only delivery. Launch audience, state scope,
 professional-review resources, approved independent comparison tools/data licensing
 and responsible people remain unconfirmed. M0 engineering artifacts may be reviewed
 now; M0 sign-off and downstream launch gates remain pending. M1 test infrastructure
-can be prepared without claiming these decisions have been made.
+can be prepared without claiming these decisions have been made. A draft
+[decision record](m0-scope-decision.md) lists each decision's options, the current
+baseline and the downstream effect, for the scope owner to confirm or change.

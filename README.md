@@ -46,7 +46,15 @@ confirmed Uniform Lifetime Table. A same-day [primary-document review](reference
 read the IRS documents, statute, Federal Register notices and CFR text directly (with file
 hashes and locators) and found no mismatches; printed Rev. Proc. 2025-32 rows and Pub 915
 Example 3 are now golden cases for both the engine and the verifier.
-Reviewers and the next maintainer should start from the [handover notes](references/handover-2026-10-29.md).
+
+The first M2 deliverable keeps published tax-year values apart from projections: income-tax
+tables are published for 2026, the OASDI wage base for 2026–2027 and the base elective limit
+for 2026. Later years project the latest published year at the plan's assumed rate, and every
+annual row labels each rule family `published` or `projected` in `rule_basis` (output contract
+1.1). The verifier checks those labels against its own retyped registry and the report's year
+audit shows them. Engine numbers are unchanged. A draft [M0 decision record](references/m0-scope-decision.md)
+awaits the scope owner. Reviewers and the next maintainer should start from the
+[handover notes](references/handover-2026-10-29-rule-years.md).
 
 ## Canonical offline verification (free, no Actions quota)
 
