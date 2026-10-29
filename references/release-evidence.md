@@ -31,8 +31,10 @@ supply missing scope decisions or independent professional sign-off.
 
 Each command runs under its own single-threaded Linux child subreaper. Orphaned
 children are adopted even after setsid/double-fork detachment. On timeout or
-parent exit, the supervisor stops and reaps remaining descendants; needing cleanup
-marks the command failed, including a zero parent exit. /proc lists candidates to
+parent exit, the supervisor stops and reaps remaining descendants; finding live
+descendants marks the command failed, including a zero parent exit. Already-exited
+adopted children (zombies) are reaped without failing an otherwise completed command:
+they cannot write again. /proc lists candidates to
 stop, but only waitpid reporting no children confirms completion. An empty /proc
 snapshot alone cannot authorize hashes. See the Linux documentation for
 [PR_SET_CHILD_SUBREAPER](https://man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html)

@@ -12,12 +12,17 @@
 @page{size:A4;margin:12mm}
 @media print{
  .panel{break-inside:auto}#sources{break-inside:avoid}h2,h3{break-after:avoid}.table tr{break-inside:avoid}
+ .split{grid-template-columns:1.6fr 1fr}.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+ #cashflow{break-before:page}.rulelist{font-size:11px;line-height:1.4}
+ .panel{padding:14px;margin:10px 0}.metric{padding:10px}.metric strong{font-size:18px}
+ .chartframe{height:210px}.focusnumber{font-size:22px}.review-list li{padding:6px 0}
+ .review-list b,.review-list span{font-size:10px}.topline,.warnings{margin-bottom:12px}
  .scrolltable{max-height:none!important;overflow:visible}
- .table{white-space:normal}.table th,.table td{padding:6px 4px}
+ .table{white-space:normal;font-size:10px;line-height:1.3}.table th{font-size:10px}.table th,.table td{padding:4px}
  .account-ledger,.account-ledger tbody{display:block}
  .account-ledger thead{display:none}
- .account-ledger tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px;padding:10px;border-bottom:1px solid var(--line)}
- .account-ledger td{display:flex;justify-content:space-between;gap:8px;text-align:right;overflow-wrap:anywhere}
+ .account-ledger tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px;padding:6px;border-bottom:1px solid var(--line)}
+ .account-ledger td{display:flex;justify-content:space-between;gap:8px;padding:3px 4px;text-align:right;overflow-wrap:anywhere}
  .account-ledger td:first-child{grid-column:1/-1;font-weight:700}
  .account-ledger td::before{content:attr(data-label);text-align:left;color:var(--muted);font-weight:400}
 }

@@ -46,9 +46,13 @@ def settle_children(path, timeout=5):
             pid, _ = os.waitpid(-1, os.WNOHANG)
         except ChildProcessError:
             return found
-        found = True
         if pid:  # Reap zombies; live descendants will be adopted as parents die.
             continue
+        # An already-exited child cannot write again. Reaping its exit status is
+        # completion, not evidence that a background writer needed stopping.
+        # A live adopted child still fails the command, even if it exits during
+        # enumeration. Only ECHILD above permits the completion receipt.
+        found = True
         if time.monotonic() >= deadline:
             raise RuntimeError('Descendant cleanup unconfirmed; no evidence receipt')
         for pid in map(int, path.read_text().split()):
