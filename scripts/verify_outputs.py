@@ -116,6 +116,7 @@ def scheduled_income(plan,year):
     n=year-plan['as_of_year']
     factor=(1+plan['assumptions']['inflation'])**n
     wages=[]
+    member_deferrals=[]
     deferrals={}
     benefits=pension=0.
     for member in plan['members']:
@@ -123,6 +124,7 @@ def scheduled_income(plan,year):
         pay=member['annual_wages_2026']*(1+member['wage_growth'])**n if age<member['retirement_age'] else 0.
         wages.append(pay)
         deferral=member.get('annual_pretax_401k_2026_real',0)*factor if pay else 0.
+        member_deferrals.append(deferral)
         if deferral:
             target=member['pretax_401k_target']
             deferrals[target]=deferrals.get(target,0.)+deferral
@@ -142,7 +144,7 @@ def scheduled_income(plan,year):
             inflows+=amount
         else:
             outflows+=amount
-    return {'wages':wages,'deferrals':deferrals,'benefits':benefits,'pension':pension,
+    return {'wages':wages,'member_deferrals':member_deferrals,'deferrals':deferrals,'benefits':benefits,'pension':pension,
             'inflows':inflows,'living':plan['living_expenses_annual_real']*factor+outflows}
 
 def deterministic_return(plan):
@@ -637,9 +639,18 @@ def _journal_checks(row,previous_basis,expect):
         raise VerifyFailure(f'{y}: cash remained while accounts were drawn or obligations went unpaid')
     if row['unpaid_tax']>0 and row['living_expenses_paid']>0:
         raise VerifyFailure(f'{y}: spending was paid before taxes were fully paid')
+    # RMDs come before conversions and draws, which can later empty the account:
+    # taken is the lesser of required and the balance after growth and deferrals.
+    # Cent-rounded balances blur only a balance within a cent of the requirement.
     for item in row['rmd']:
-        if item['unmet']>.005 and closing[item['account']]>.01:
-            raise VerifyFailure(f'{y}: unmet RMD reported while {item["account"]} kept a balance')
+        aid=item['account']
+        required=item['required']
+        available=row['opening_accounts'][aid]+row['growth_by_account'][aid]+accounts[aid]['contribution']
+        covered=available>=required+.0101+1e-12*abs(available)
+        expect(item['taken'],min(required,available),
+               f'{y}: {aid} RMD taken as the lesser of required and the balance before conversions and draws',
+               1e-9+1e-12*required if covered else .0101+1e-12*abs(available))
+        expect(item['unmet'],required-item['taken'],f'{y}: {aid} unmet RMD as required less taken',1e-9+1e-12*required)
     # Average proportional basis: realized basis = draw x prior basis / value at sale.
     basis=row['taxable_basis_end']
     if previous_basis is None:
@@ -765,6 +776,13 @@ def _rule_checks(row,policy,plan,expect):
             raise VerifyFailure(f'{y}: OASDI wages exceed the wage base')
     if sum(covered)>row['wages_gross']+.0101:
         raise VerifyFailure(f'{y}: OASDI wages exceed gross wages')
+    # Each person is covered up to the base, so the total is at least the lesser of
+    # gross wages and the base: exact for one filer; joint splits need the plan.
+    floor=min(row['wages_gross'],payroll['wage_base_per_person'])
+    if status=='single':
+        expect(covered[0],floor,f'{y}: OASDI wages for a single filer',.0101)
+    elif sum(covered)<floor-.0151:
+        raise VerifyFailure(f'{y}: OASDI wages below the lesser of gross wages and the wage base')
     expect(payroll['social_security_tax'],sum(covered)*OASDI_RATE,f'{y}: OASDI employee tax',.0061)
     expect(payroll['medicare_tax'],row['wages_gross']*MEDICARE_RATE,f'{y}: Medicare employee tax',.0052)
     expect(payroll['additional_medicare_taxable_wages'],max(0.,row['wages_gross']-EXTRA_MEDICARE_WAGES[status]),
@@ -791,10 +809,10 @@ def _plan_checks(row,plan,path_return,blocks,expect):
         expect(row['pretax_contribution_by_account'].get(aid,0.),scheduled['deferrals'].get(aid,0.),
                f'{y}: {aid} deferral scheduled by plan',.0051)
     expect(row['pretax_contributions'],sum(scheduled['deferrals'].values()),f'{y}: deferrals scheduled by plan',.0051)
-    # Base elective limit only (no catch-up), indexed by the hypothetical policy rate.
+    # Per-person base elective limit (no catch-up), indexed by the hypothetical
+    # policy rate; a non-contributing member's unused target is ignored.
     limit=ELECTIVE_DEFERRAL_2026*(1+plan['tax_policy']['future_bracket_inflation'])**(y-2026)
-    for member,pay in zip(plan['members'],scheduled['wages']):
-        deferral=scheduled['deferrals'].get(member.get('pretax_401k_target'),0.)
+    for member,pay,deferral in zip(plan['members'],scheduled['wages'],scheduled['member_deferrals']):
         if deferral>min(pay,limit)+1e-7:
             raise VerifyFailure(f'{y}: {member["id"]} deferral exceeds wages or the indexed base elective limit')
     expect(row['social_security_gross'],scheduled['benefits'],f'{y}: Social Security scheduled by plan',.0051+1e-12*scheduled['benefits'])

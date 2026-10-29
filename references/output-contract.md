@@ -55,10 +55,10 @@ The M1 verification matrix further records gaps and mutation evidence.
 | Y.year,age_primary,market_return,inflation_factor | Year, whole age, portfolio decimal return, (1+inflation)^(year−2026) | Year continuity and inflation checked; with plan, age and the deterministic mean-less-fee return re-derived; traced paths regenerate returns from seed and index |
 | Y.opening_total,opening_accounts[A] | Prior closing / plan initial balances | Per-account/total continuity and sums |
 | Y.investment_growth_total,growth_by_account[A] | Opening balance × portfolio return or cash yield | Sum checked; invested accounts = opening × reported return; with plan, cash = opening × cash yield |
-| Y.wages_gross,wages_taxable,pretax_contributions,pretax_contribution_by_account[A] | Wages grown until retirement, less eligible contributions | Gross−contributions relation and journals checked; with plan, wages and indexed deferrals re-derived and the base elective limit enforced |
+| Y.wages_gross,wages_taxable,pretax_contributions,pretax_contribution_by_account[A] | Wages grown until retirement, less eligible contributions | Gross−contributions relation and journals checked; with plan, wages and indexed deferrals re-derived and each member's deferral held within own wages and the base elective limit |
 | Y.social_security_gross,pension_gross,other_after_tax_income | Input amounts escalated and activated at age/year | With plan, re-derived from claim/start ages, 2026-real escalation and events; source benefits not independently verified |
 | Y.living_expenses_due,living_expenses_paid,unmet_spending | Indexed living + events; paid subject to cash after taxes | Due=paid+unmet; taxes paid first; a shortfall needs exhausted cash and, with plan, exhausted accessible accounts; with plan, due re-derived |
-| Y.rmd[*].account,age,previous_dec31_balance,divisor,required,taken,unmet | Account / age; USD nominal, divisor in years; prior balance/divisor | Balance, division and taken+unmet checked; unmet requires an empty account; divisor must equal the retyped Uniform Lifetime row for the reported age; with plan, records exist exactly at start age 73/75 and ages match |
+| Y.rmd[*].account,age,previous_dec31_balance,divisor,required,taken,unmet | Account / age; USD nominal, divisor in years; prior balance/divisor | Balance, division and taken+unmet checked; taken = lesser of required and the balance after growth and deferrals, before conversions and draws, and unmet = required − taken; divisor must equal the retyped Uniform Lifetime row for the reported age; with plan, records exist exactly at start age 73/75 and ages match |
 | Y.rmd_total,unmet_rmd | Sum of taken / unmet | Cent-rounded sums; $1e-8 equality tolerance |
 | Y.roth_converted,conversion_transfers[*].from,to,amount | Internal same-owner transfers, USD nominal | Account IDs, amount, summed taxable conversion checked; with plan, transfers match the schedule in order and fit the post-RMD balance |
 | Y.skipped_conversions[*].year,from,amount,reason | Requested transfer not executed | Failure flag checked; with plan, matches the schedule and the post-RMD balance was insufficient |
@@ -71,7 +71,7 @@ The M1 verification matrix further records gaps and mutation evidence.
 | T.ordinary_tax,capital_gains_tax,federal_income_tax,income_tax_method | USD; chosen lesser ordinary-rate-cap / preferred method | Both methods recomputed; reported method must be the lower (one-cent tie tolerance); not all tax law verified |
 | T.niit_magi_assumed_equal_agi,niit_net_investment_income,niit_threshold,niit_tax_base,niit_rate,niit_due,total_federal_income_and_niit | USD except decimal rate; restricted income base and threshold | Independently recomputed NIIT from modeled components; no unsupported income/adjustments |
 | T.tax_law_year,year,rule_multiplier,policy,unmodeled | 2026 reference; projected year; hypothetical index; disclosures | Year, 2026 law year and multiplier from policy checked; disclosures by replay; not future legislation |
-| P.wage_base_per_person,oasdhi_taxable_wages_by_person,additional_medicare_taxable_wages,social_security_tax,medicare_tax,additional_medicare_tax,total | USD nominal, employee FICA only | Published 2026/2027 caps and hypothetical later cap, rates and Additional Medicare threshold recomputed; with plan, per-person covered wages |
+| P.wage_base_per_person,oasdhi_taxable_wages_by_person,additional_medicare_taxable_wages,social_security_tax,medicare_tax,additional_medicare_tax,total | USD nominal, employee FICA only | Published 2026/2027 caps and hypothetical later cap, rates and Additional Medicare threshold recomputed; covered wages = min(gross wages, base) for a single filer, at least that for joint filers; with plan, per-person covered wages |
 | Y.tax_due_total,tax_paid,unpaid_tax | USD nominal, federal+NIIT+FICA and cash settlement | Components and paid+unpaid checked |
 | Y.closing_total,closing_accounts[A],closing_total_real | USD nominal; real = nominal / inflation factor | Conservation, account sums, nonnegative balances, deflation; account-count-dependent rounding tolerance |
 | Y.reconciliation_residual,account_reconciliation_residuals[A] | USD, closing minus reconstructed closing | $0.01 residual gate; exported rounded-account reconstruction generally $0.05 |
@@ -93,6 +93,7 @@ The M1 verification matrix further records gaps and mutation evidence.
   95% describe fixed quantile/interval choices, not predictive confidence.
 - Year audit notices: engine blocked-account messages, skipped conversions (from,
   amount, reason) and cent-visible unmet RMD records, listed verbatim; no new amounts.
+  Duplicate notice years or years outside the ledger hide conclusions and exports.
   The year status badge uses the engine's USD 0.01 reconciliation gate.
 - Evidence count = input_provenance.register.length; neither this count nor
   `documented_verified` authenticates source documents.

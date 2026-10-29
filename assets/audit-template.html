@@ -100,8 +100,12 @@ function validateReportData(data){
   requireArray(r.terminal_real_p10_p50_p90,3);r.terminal_real_p10_p50_p90.forEach(requireNumber);
   requireFailureYear(r.deterministic_annual_ledger.first_failure_year);
   requireArray(r.deterministic_annual_ledger.notices);
+  // yearNotices() shows one notice per ledger year; any other notice would be hidden.
+  const noticeYears=new Set();
   for(const notice of r.deterministic_annual_ledger.notices){
    requireInteger(notice.year);requireArray(notice.blocks);
+   if(noticeYears.has(notice.year)||!rows.some(row=>row.year===notice.year))throw Error('Invalid funding notice year');
+   noticeYears.add(notice.year);
    if(!notice.blocks.length||notice.blocks.some(block=>typeof block!=='string'||!block))throw Error('Invalid funding notice');
   }
   for(const [j,band] of r.annual_real_percentiles.entries()){

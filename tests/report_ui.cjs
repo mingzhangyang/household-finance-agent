@@ -15,9 +15,14 @@ if (invalidMode === 'second-scenario') {
   const broken=JSON.parse(raw);broken.results[1].deterministic_annual_ledger.rows[0].tax.federal_income_tax='invalid';
   raw=JSON.stringify(broken);
 }
-if (['invalid-notice','invalid-skipped-conversion','invalid-rmd-record'].includes(invalidMode)) {
+if (['invalid-notice','duplicate-notice-year','notice-year-outside-ledger',
+     'invalid-skipped-conversion','invalid-rmd-record'].includes(invalidMode)) {
   const broken=JSON.parse(raw), ledger=broken.results[2].deterministic_annual_ledger;
+  const notice=(year,id)=>({year,blocks:[`${id}: early distributions before 60 not modeled`]});
   if(invalidMode==='invalid-notice')ledger.notices=[{year:ledger.rows[0].year,blocks:[1]}];
+  // The year audit shows one notice per ledger year; others would be hidden.
+  else if(invalidMode==='duplicate-notice-year')ledger.notices=[notice(ledger.rows[0].year,'ira_a'),notice(ledger.rows[0].year,'roth_a')];
+  else if(invalidMode==='notice-year-outside-ledger')ledger.notices=[notice(ledger.rows.at(-1).year+1,'ira_a')];
   else if(invalidMode==='invalid-skipped-conversion')ledger.rows[0].skipped_conversions=[{from:'ira_a',amount:'1',reason:'test'}];
   else ledger.rows[0].rmd=[{account:'ira_a',required:1,taken:'1',unmet:0}];
   raw=JSON.stringify(broken);

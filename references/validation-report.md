@@ -2,6 +2,23 @@
 
 This is a repeatable QA record, not an independent CPA/CFP attestation. Execute the entire test suite and save the generated result and verifier JSON before claiming any count of passing tests. Output in `model_validation_report.md` outside the skill contains the latest complete fixture-specific numbers.
 
+## PR #10 review fixes (2026-10-29)
+
+Fixes for the four Copilot review findings; local results, not a GitHub Actions run.
+
+- RMD taken must be the lesser of required and the balance before conversions and
+  draws, with unmet = required − taken; a non-contributing member's unused 401(k)
+  target no longer fails valid results; covered OASDI wages are bounded without the
+  plan; the report rejects duplicate or out-of-ledger notice years. The tests for the
+  four findings fail on the previous verifier or template; two more confirm that the
+  per-person limit and a fake four-cent RMD shortfall are still rejected.
+- `sh scripts/verify_local.sh`: **180 tests**; the 40-year / 300-path run receives
+  **5,775 verifier assertions**; traced path 17 passed (5,790 assertions).
+- `python scripts/verify_m1_cases.py`: 4 cases / 11 years / 599 comparisons passed.
+- Seeded sweeps (500 plans, seeds 7, 8, 9; the generator now adds unused 401(k)
+  targets): 1,458 valid results and 5,832 traced paths passed; all 47,931
+  single-field mutations were rejected.
+
 ## M1 verification-depth follow-up (2026-10-29)
 
 Local results for this change; not a GitHub Actions run, professional review or

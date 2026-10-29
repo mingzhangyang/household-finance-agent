@@ -98,6 +98,7 @@ class ReportRoundTrip(unittest.TestCase):
             for mode in ('empty','invalid-json','failed-verification','second-scenario',
                          'numeric-mutations','tax-method-text','missing-plan-json',
                          'invalid-plan-json','mismatched-plan-json','invalid-notice',
+                         'duplicate-notice-year','notice-year-outside-ledger',
                          'invalid-skipped-conversion','invalid-rmd-record'):
                 with self.subTest(mode=mode):
                     check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),mode],

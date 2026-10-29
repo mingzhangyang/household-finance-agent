@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import audit_plan
-from verify_outputs import verify,verify_trace,VerifyFailure
+from verify_outputs import plan_sha256,verify,verify_trace,VerifyFailure
 
 EXAMPLE=json.loads((ROOT/'examples/audited-household-2026.json').read_text())
 
@@ -146,8 +146,45 @@ class OutputOnlyJournalForgeries(unittest.TestCase):
         row['closing_accounts']['cash']-=400
         add_untaxed_ordinary(row,-400)
         result['deterministic_annual_ledger'].update(failed=True,first_failure_year=2027)
-        with self.assertRaisesRegex(VerifyFailure,'unmet RMD reported while ira kept a balance'):
+        with self.assertRaisesRegex(VerifyFailure,'ira RMD taken as the lesser of required and the balance before conversions'):
             verify(result)
+
+    def test_fake_cent_rmd_shortfall_beside_a_balance(self):
+        # taken+unmet need only match required within five cents; a visible
+        # four-cent shortfall would fail the year although the IRA was ample.
+        plan,result,row=self.rmd_case()
+        row['rmd'][0]['unmet']=.04
+        row['unmet_rmd']=.04
+        result['deterministic_annual_ledger'].update(failed=True,first_failure_year=2027)
+        for supplied in (None,plan):
+            with self.subTest(plan=supplied is not None):
+                with self.assertRaisesRegex(VerifyFailure,'ira unmet RMD as required less taken'):
+                    verify(result,supplied)
+
+    def test_understated_rmd_hidden_by_a_draw_that_empties_the_account(self):
+        # The IRA is drawn to zero, so an empty closing balance cannot show
+        # whether the RMD was fundable. Move 400 of the RMD into the draw:
+        # the same ordinary income and tax, a false RMD shortfall.
+        plan=household(birth=1954,ira=26500,living=30000)
+        result=audit_plan.evaluate(plan)
+        row=first_row(result)
+        self.assertEqual((row['rmd'][0]['taken'],row['extra_draws'],row['closing_accounts']['ira']),
+                         (1000,{'ira':25500},0))
+        self.assertGreater(row['unmet_spending'],0)
+        row['rmd'][0].update(taken=600.,unmet=400.)
+        row['rmd_total']=600.
+        row['unmet_rmd']=400.
+        row['extra_draws']['ira']+=400
+        row['ira_extra_taxable']+=400
+        flows=row['account_flows']
+        flows['ira']['required_distribution']=600.
+        flows['ira']['optional_draw']+=400
+        flows['cash']['cash_received_rmd']=600.
+        flows['cash']['cash_received_draws']+=400
+        for supplied in (None,plan):
+            with self.subTest(plan=supplied is not None):
+                with self.assertRaisesRegex(VerifyFailure,'ira RMD taken as the lesser of required and the balance before conversions'):
+                    verify(result,supplied)
 
     def test_rmd_divisor_must_follow_uniform_lifetime_table(self):
         plan,result,row=self.rmd_case()
@@ -220,6 +257,46 @@ class PlanScheduleForgeries(unittest.TestCase):
         add_untaxed_ordinary(row,-1000)
         self.assertTrue(verify(result)['passed'])
         with self.assertRaisesRegex(VerifyFailure,'RMD accounts'):
+            verify(result,plan)
+
+    def deferral_plan(self,amount):
+        plan=household(birth=1970,wages=30000,cash=50000,living=20000)
+        plan['members'][0].update(annual_pretax_401k_2026_real=amount,pretax_401k_target='k_a')
+        plan['accounts'].append(dict(id='k_a',kind='traditional_401k',owner='a',balance=0,
+                                     still_working_exception=False,fully_pretax_confirmed=True))
+        plan['withdrawal_order'].append('k_a')
+        return plan
+
+    def test_unused_deferral_target_of_a_non_contributing_spouse(self):
+        # Valid input: the engine checks a target only for a member who contributes.
+        plan=self.deferral_plan(10000)
+        plan['members'].append(dict(plan['members'][0],id='b',annual_wages_2026=0,retirement_age=40,
+                                    annual_pretax_401k_2026_real=0))
+        plan['tax_policy']['filing_status']='mfj'
+        result=audit_plan.evaluate(plan)
+        self.assertEqual(first_row(result)['pretax_contribution_by_account'],{'k_a':10000})
+        self.assertTrue(verify(result,plan)['passed'])
+
+    def test_deferral_above_the_base_elective_limit(self):
+        # Income tax stays zero with a 20,000 or 25,000 deferral from 30,000 wages.
+        plan=self.deferral_plan(20000)
+        result=audit_plan.evaluate(plan)
+        self.assertTrue(verify(result,plan)['passed'])
+        plan=self.deferral_plan(25000)
+        with self.assertRaisesRegex(audit_plan.ModelError,'exceeds modeled wage/2026-base limit'):
+            audit_plan.evaluate(plan)
+        result['input_sha256']=plan_sha256(plan)
+        row=first_row(result)
+        row['pretax_contributions']=25000.
+        row['pretax_contribution_by_account']={'k_a':25000.}
+        row['wages_taxable']-=5000
+        row['account_flows']['k_a']['contribution']=25000.
+        row['account_flows']['cash']['cash_external_inflow']-=5000
+        row['closing_accounts']['k_a']+=5000
+        row['closing_accounts']['cash']-=5000
+        add_untaxed_ordinary(row,-5000)
+        self.assertTrue(verify(result)['passed'])
+        with self.assertRaisesRegex(VerifyFailure,'a deferral exceeds wages or the indexed base elective limit'):
             verify(result,plan)
 
     def test_withdrawal_order_swapped(self):
@@ -423,6 +500,41 @@ class RetypedRuleForgeries(unittest.TestCase):
                 with self.assertRaisesRegex(VerifyFailure,message):
                     verify(forged)
 
+    def understate_oasdi_wages(self,row,person,amount):
+        payroll=row['payroll_tax']
+        saved=round(amount*.062,2)
+        payroll['oasdhi_taxable_wages_by_person'][person]-=amount
+        payroll['social_security_tax']=round(payroll['social_security_tax']-saved,2)
+        payroll['total']=round(payroll['total']-saved,2)
+        for key in ('tax_due_total','tax_paid'):
+            row[key]=round(row[key]-saved,2)
+        row['account_flows']['cash']['cash_tax_and_spending_outflow']-=saved
+        shift_cash(row,saved)
+
+    def test_understated_oasdi_wages_without_plan(self):
+        # Single filer: covered wages are exactly min(gross wages, wage base).
+        plan,result=self.wage_result()
+        self.understate_oasdi_wages(first_row(result),0,100000)
+        with self.assertRaisesRegex(VerifyFailure,'OASDI wages for a single filer'):
+            verify(result)
+        # Joint filers: the household total is at least min(gross wages, wage base).
+        def joint(wages_b):
+            plan=household(birth=1961,wages=150000,cash=10000,living=60000)
+            plan['members'].append(dict(plan['members'][0],id='b',annual_wages_2026=wages_b,
+                                        retirement_age=90 if wages_b else 40))
+            plan['tax_policy']['filing_status']='mfj'
+            return plan,audit_plan.evaluate(plan)
+        plan,result=joint(0)
+        self.understate_oasdi_wages(first_row(result),0,1000)
+        with self.assertRaisesRegex(VerifyFailure,'OASDI wages below the lesser of gross wages and the wage base'):
+            verify(result)
+        # Above that bound the split between spouses needs the plan.
+        plan,result=joint(150000)
+        self.understate_oasdi_wages(first_row(result),1,100000)
+        self.assertTrue(verify(result)['passed'])
+        with self.assertRaisesRegex(VerifyFailure,'OASDI wages for member 1'):
+            verify(result,plan)
+
     def test_stacking_label_when_ordinary_cap_is_lower(self):
         # MFJ $100,000 ordinary taxable + $800 gain straddling the 0% zone top.
         plan=household(birth=1970,wages=132200,brokerage=10000,basis=0,living=111286.70)
@@ -544,6 +656,10 @@ def generated_plan(rng,n):
         if m['annual_wages_2026'] and rng.random()<.6:
             m.update(annual_pretax_401k_2026_real=min(m['annual_wages_2026']*.5,rng.uniform(0,15000)),
                      pretax_401k_target='k_'+m['id'])
+    for m in members:
+        # Accepted and ignored by the engine: a target without a contribution.
+        if 'pretax_401k_target' not in m and rng.random()<.3:
+            m['pretax_401k_target']=rng.choice(['k_'+x['id'] for x in members])
     end=min(2026+rng.choice([1,3,10,30]),min(m['birth_year'] for m in members)+120)
     order=[a['id'] for a in accounts[1:]]
     rng.shuffle(order)
