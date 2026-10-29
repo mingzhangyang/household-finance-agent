@@ -18,7 +18,7 @@ No metric is allowed to inherit “verified” merely because another metric pas
 | Intermediate annual P10/P50/P90 | Structure, ordering, years; full same-engine replay | Three coherently shifted percentiles pass arithmetic but FAIL replay | Not independently calculated by another model |
 | Individual path funded/failure/terminal | Structure/aggregate; full seeded replay | Reorder/truncate/false flags; replay | Replay is reproducibility, not calibration |
 | Notices, rule links, source IDs, human-readable limitations | Output catalog and source review; exact replay | Whole-result comparison | Not live source monitoring or professional review |
-| UI sums, rounding, chart, CSV and JSON/plan exports | Handler regression, report round trip; M1/M5 browser evidence next | Export comparison and replay; UI numeric comparisons | Browser acceptance and offline arithmetic are distinct checks |
+| UI sums, rounding, chart, CSV and JSON/plan exports | Handler regression and real Chromium suite required in CI | All years at two viewports; plan/bundle replay; CSV and errors | Chromium mobile emulation is not physical Safari/Android acceptance |
 | Verifier counts/status | Re-run verifier; explicit validation_level and limitations | Malformed output raises VerifyFailure | Assertion count is neither coverage nor probability of correctness |
 
 ## Golden-case independence and tolerances
@@ -54,3 +54,14 @@ Neither pass upgrades input authentication, market calibration or professional r
 Remaining M1 gate: broaden independent cross-function cases to the final approved
 scope, obtain independent reviewer sign-off, and resolve any substantive differences.
 No external commercial planning-tool comparison is claimed.
+
+## M1 combined-case acceptance follow-up
+
+[M1 acceptance](m1-acceptance.md) adds three frozen fictional plans with nine annual
+rows and 461 comparisons against independent Decimal equations. The references cover
+MFJ retirement/pension/SS timing with a tax-funded IRA draw, two years of RMD and
+conversion with both NIIT limiting bases, and cash/taxable/IRA/Roth exhaustion with
+an exact first-failure year. Monetary tolerance is USD 0.01; years, status, divisor
+and the zero-return funded fraction are exact. The collector saves all differences
+to `independent-cases.json`. These cases strengthen the rows above; they do not
+remove the general model/coverage limits or substitute for professional review.

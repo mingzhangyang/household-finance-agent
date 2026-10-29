@@ -9,6 +9,23 @@
 @media(max-width:1100px){.layout{grid-template-columns:1fr}.side{position:static;height:auto;padding:13px 19px;border-right:0;border-bottom:1px solid var(--line)}.side nav,.sidefoot{display:none}.main{padding:24px 17px 50px}.metrics{grid-template-columns:repeat(2,1fr)}.split{grid-template-columns:1fr}}
 @media(max-width:620px){.topline{display:block}.actionrow{justify-content:flex-start;margin-top:15px}.metrics{gap:8px}.metric{padding:13px}.metric strong{font-size:20px}.panel{padding:14px}.detailsgrid{grid-template-columns:1fr}.chartframe{height:240px}.legend{gap:7px}h1{font-size:25px}}
 @media print{body{background:white}.layout{display:block}.side,.actionrow,.scenarios,.no-print{display:none!important}.main{padding:0}.panel,.metric{break-inside:avoid;box-shadow:none}.scrolltable{max-height:none;overflow:visible}.table th{position:static}a{color:#000;text-decoration:none}.warnings{border:1px solid #d4c4a3}.chartframe{height:260px}.panel#year-detail{break-before:page}.metric strong{font-size:20px}}
+@page{size:A4;margin:12mm}
+@media print{
+ .panel{break-inside:auto}#sources{break-inside:avoid}h2,h3{break-after:avoid}.table tr{break-inside:avoid}
+ .split{grid-template-columns:1.6fr 1fr}.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+ #cashflow{break-before:page}.rulelist{font-size:11px;line-height:1.4}
+ .panel{padding:14px;margin:10px 0}.metric{padding:10px}.metric strong{font-size:18px}
+ .chartframe{height:210px}.focusnumber{font-size:22px}.review-list li{padding:6px 0}
+ .review-list b,.review-list span{font-size:10px}.topline,.warnings{margin-bottom:12px}
+ .scrolltable{max-height:none!important;overflow:visible}
+ .table{white-space:normal;font-size:10px;line-height:1.3}.table th{font-size:10px}.table th,.table td{padding:4px}
+ .account-ledger,.account-ledger tbody{display:block}
+ .account-ledger thead{display:none}
+ .account-ledger tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px;padding:6px;border-bottom:1px solid var(--line)}
+ .account-ledger td{display:flex;justify-content:space-between;gap:8px;padding:3px 4px;text-align:right;overflow-wrap:anywhere}
+ .account-ledger td:first-child{grid-column:1/-1;font-weight:700}
+ .account-ledger td::before{content:attr(data-label);text-align:left;color:var(--muted);font-weight:400}
+}
 </style>
 </head>
 <body>
@@ -33,7 +50,7 @@
 <hr class="thin"><h3>所得税税阶逐条复算</h3><p class="help">普通所得税：各税阶纳税金额 × 税率逐条相加；资本利得税：比较优惠税率叠加与全部应税收入按普通税率计算的税额，采用较低结果；下表列出所选方法实际使用的税率。受限税法与未来税阶假设见下文。</p>
 <div class="detailsgrid"><div class="scrolltable" style="max-height:none"><table class="table"><thead><tr><th>普通所得税率</th><th>该税阶应税额</th><th>税额</th></tr></thead><tbody id="ordinary-brackets"></tbody></table></div><div class="scrolltable" style="max-height:none"><table class="table"><thead><tr><th>长期资本利得税率</th><th>该税阶应税额</th><th>税额</th></tr></thead><tbody id="capital-brackets"></tbody></table></div></div>
 <hr class="thin"><h3>账户级完整资金流</h3><p class="help">每行严格满足：期初 + 收益 + 存入 + RMD转入 + 转换转入 + 提款转入 + 外部净收入 − RMD转出 − 转换转出 − 额外提款 − 现金支出税款 = 期末。</p>
-<div class="scrolltable" style="max-height:none"><table class="table"><thead><tr><th>账户</th><th>期初</th><th>收益</th><th>缴款</th><th>RMD转出</th><th>转换转出</th><th>转换转入</th><th>额外提款</th><th>现金净外部收入</th><th>现金RMD收款</th><th>现金提款收款</th><th>现金实付税款及开销</th><th>期末</th><th>残差</th></tr></thead><tbody id="account-rows"></tbody></table></div>
+<div class="scrolltable" style="max-height:none"><table class="table account-ledger"><thead><tr><th>账户</th><th>期初</th><th>收益</th><th>缴款</th><th>RMD转出</th><th>转换转出</th><th>转换转入</th><th>额外提款</th><th>现金净外部收入</th><th>现金RMD收款</th><th>现金提款收款</th><th>现金实付税款及开销</th><th>期末</th><th>残差</th></tr></thead><tbody id="account-rows"></tbody></table></div>
 <p class="data-id" id="audit-eq"></p></section>
 <section class="panel no-print" id="path-audit"><h2>蒙特卡洛逐条路径清单 <span class="small">/ Sample path audit</span></h2><p class="help">以下每条路径可以用方案 JSON、相同 seed、相同引擎代码以及 CLI 指令 <code>audit_plan.py trace --path-index N</code> 复算完整年度账本。不是历史验证数据。</p><div class="scrolltable" style="max-height:300px"><table class="table"><thead><tr><th>路径编号</th><th>全部义务有资金</th><th>首次缺口年份</th><th>期末资产（2026购买力）</th></tr></thead><tbody id="path-rows"></tbody></table></div></section>
 <section class="panel" id="sources"><h2>规则来源与限制 <span class="small">/ Provenance</span></h2><div class="detailsgrid"><div><h3>官方参考来源</h3><div id="source-links" class="rulelist"></div></div><div><h3>模型中未覆盖的部分</h3><ul class="rulelist" id="limitations"></ul></div></div><hr class="thin"><p class="help">证据追踪：输入和引擎的 SHA-256 仅用于校对版本；不是加密签名或外部审计认证。</p><p class="data-id" id="input-quality"></p><p class="data-id" id="input-hash"></p><p class="data-id" id="engine-hash"></p></section>
@@ -168,7 +185,7 @@ function renderDetailChecked(year){selectedYear=year;const r=get(),row=r.determi
   let cells=[id,row.opening_accounts[id],row.growth_by_account[id],f.contribution,f.required_distribution,f.roth_conversion_out,
       f.roth_conversion_in,f.optional_draw,f.cash_external_inflow,f.cash_received_rmd,f.cash_received_draws,
       f.cash_tax_and_spending_outflow,row.closing_accounts[id],row.account_reconciliation_residuals[id]];
-  cells.forEach((v,j)=>{const td=document.createElement('td');td.textContent=j===0?v:full(v);tr.append(td)});table.append(tr)});
+  cells.forEach((v,j)=>{const td=document.createElement('td');td.textContent=j===0?v:full(v);td.dataset.label=table.closest('table').tHead.rows[0].cells[j].textContent;tr.append(td)});table.append(tr)});
  text('audit-eq',`对账恒等式：${full(row.opening_total)} + ${full(row.investment_growth_total)} + ${full(row.wages_gross+row.social_security_gross+row.pension_gross+row.other_after_tax_income)} − ${full(row.living_expenses_paid)} − ${full(row.tax_paid)} = ${full(row.closing_total)}；残差 ${full(row.reconciliation_residual)}`);
  for(const tr of $('cashflow-rows').querySelectorAll('tr[data-year]'))tr.classList.toggle('selected',Number(tr.dataset.year)===year);
  $('year-select').value=String(year);

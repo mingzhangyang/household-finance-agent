@@ -31,8 +31,10 @@ supply missing scope decisions or independent professional sign-off.
 
 Each command runs under its own single-threaded Linux child subreaper. Orphaned
 children are adopted even after setsid/double-fork detachment. On timeout or
-parent exit, the supervisor stops and reaps remaining descendants; needing cleanup
-marks the command failed, including a zero parent exit. /proc lists candidates to
+parent exit, the supervisor stops and reaps remaining descendants; finding live
+descendants marks the command failed, including a zero parent exit. Already-exited
+adopted children (zombies) are reaped without failing an otherwise completed command:
+they cannot write again. /proc lists candidates to
 stop, but only waitpid reporting no children confirms completion. An empty /proc
 snapshot alone cannot authorize hashes. See the Linux documentation for
 [PR_SET_CHILD_SUBREAPER](https://man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html)
@@ -61,7 +63,17 @@ cover the verifier or presentation layer. Use the full bundle for release proven
 
 ## Real-browser runner
 
-Install a Playwright version supported by your environment and its Chromium binary.
+Install the pinned development-only Playwright version and its Chromium binary:
+
+```sh
+npm ci --ignore-scripts
+npx --no-install playwright install --with-deps chromium
+sudo apt-get install -y fonts-noto-cjk  # Linux Chinese screenshots/print
+```
+
+CI performs these steps and requires `--browser`; it also records the independent
+M1 combined-case differences in `independent-cases.json`. No package or font is
+embedded in, or fetched by, the offline financial report itself.
 Node must resolve `playwright` (`NODE_PATH` may point to an existing installation).
 `HFA_BROWSER_EXECUTABLE` optionally selects an already installed Chromium; the runner
 records the actual browser and Playwright versions. No npm install or browser download

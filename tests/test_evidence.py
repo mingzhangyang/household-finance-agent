@@ -66,6 +66,23 @@ class SupervisionFailure(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'cleanup unconfirmed'):
                     evidence_process.settle_children(children)
 
+    def test_already_exited_descendants_are_reaped_without_marking_failure(self):
+        # Chromium can leave adopted exit statuses after browser.close(). Dead
+        # children cannot modify artifacts; waitpid must still reach ECHILD.
+        with patch.object(evidence_process.os,'waitpid',side_effect=[(101,0),(102,0),ChildProcessError()]), \
+             patch.object(evidence_process.os,'kill') as kill:
+            self.assertFalse(evidence_process.settle_children(None))
+            kill.assert_not_called()
+
+    def test_exited_descendant_does_not_hide_a_living_one(self):
+        with tempfile.TemporaryDirectory() as temp:
+            children=Path(temp)/'children';children.write_text('102')
+            with patch.object(evidence_process.os,'waitpid',side_effect=[(101,0),(0,0),(0,0),(102,0),ChildProcessError()]), \
+                 patch.object(evidence_process.os,'kill') as kill, \
+                 patch.object(evidence_process.time,'sleep'):
+                self.assertTrue(evidence_process.settle_children(children))
+                kill.assert_called_once_with(102,evidence_process.signal.SIGKILL)
+
 
 @unittest.skipIf(SUPERVISION_UNAVAILABLE is not None, SUPERVISION_UNAVAILABLE or '')
 class EvidenceCommands(unittest.TestCase):

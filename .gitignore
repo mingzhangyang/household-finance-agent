@@ -8,4 +8,5 @@ __pycache__/
 private/
 reports/private/
 results/
+node_modules/
 *.secret.*

@@ -78,6 +78,8 @@ def main():
         return code==0
 
     ok = run('offline', ['sh','scripts/verify_local.sh'])
+    ok = run('independent-cases', [sys.executable, 'scripts/verify_m1_cases.py',
+              '--output', str(out/'independent-cases.json')]) and ok
     fixture = 'examples/audited-household-2026.json'
     generated = run('result',[sys.executable,'scripts/audit_plan.py','run',fixture,'--output',str(out/'result.json')])
     ok = generated and ok
