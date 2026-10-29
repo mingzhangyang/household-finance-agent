@@ -2,6 +2,60 @@
 
 This is a repeatable QA record, not an independent CPA/CFP attestation. Execute the entire test suite and save the generated result and verifier JSON before claiming any count of passing tests. Output in `model_validation_report.md` outside the skill contains the latest complete fixture-specific numbers.
 
+## PR #10 second review round (2026-10-29)
+
+Copilot's second review and a follow-up self-review; local results.
+
+- An RMD requirement must equal the unrounded prior balance over the divisor (an empty
+  IRA could report a 4-cent unmet requirement); the basis rounding bound now holds over
+  the whole cent interval (valid sales from a few-cent balance were rejected); notices
+  must be the exact documented message (an `ira:spouse` notice satisfied the `ira:`
+  prefix); paid plus unpaid tax and spending must match the amount due within one cent
+  instead of five (self-review: a 4-cent fake shortfall passed after an exact draw).
+  The new tests fail on the previous verifier.
+- `sh scripts/verify_local.sh`: **184 tests**; 5,775 verifier assertions on the
+  40-year / 300-path run; traced path 17 passed (5,790 assertions).
+- Seeded sweeps (500 plans, seeds 7, 8, 9): 1,458 valid results and 5,832 traced paths
+  passed; all 47,931 single-field mutations were rejected.
+
+## PR #10 review fixes (2026-10-29)
+
+Fixes for the four Copilot review findings; local results, not a GitHub Actions run.
+
+- RMD taken must be the lesser of required and the balance before conversions and
+  draws, with unmet = required − taken; a non-contributing member's unused 401(k)
+  target no longer fails valid results; covered OASDI wages are bounded without the
+  plan; the report rejects duplicate or out-of-ledger notice years. The tests for the
+  four findings fail on the previous verifier or template; two more confirm that the
+  per-person limit and a fake four-cent RMD shortfall are still rejected.
+- `sh scripts/verify_local.sh`: **180 tests**; the 40-year / 300-path run receives
+  **5,775 verifier assertions**; traced path 17 passed (5,790 assertions).
+- `python scripts/verify_m1_cases.py`: 4 cases / 11 years / 599 comparisons passed.
+- Seeded sweeps (500 plans, seeds 7, 8, 9; the generator now adds unused 401(k)
+  targets): 1,458 valid results and 5,832 traced paths passed; all 47,931
+  single-field mutations were rejected.
+
+## M1 verification-depth follow-up (2026-10-29)
+
+Local results for this change; not a GitHub Actions run, professional review or
+statutory re-check of the register values.
+
+- `sh scripts/verify_local.sh`: **175 tests**; the 40-year / 300-path fictional run
+  now receives **5,715 verifier assertions** (previously 2,990); exact replay passed;
+  traced path 17 passed with regenerated returns and its manifest entry (5,730 assertions).
+- `python scripts/verify_m1_cases.py`: **4 cases / 11 years / 599 comparisons** passed,
+  including the new growth, inflation and hypothetical-indexing case.
+- Seeded generated-plan sweeps (`HFA_VERIFIER_FUZZ_PLANS=500`, seeds 7, 8, 9):
+  1,466 valid results and 5,864 traced paths passed; all 49,208 single-field ledger
+  mutations (USD 1, or 1e-6 for rates, returns, factors and RMD divisors) were rejected.
+- [Source re-check](source-check-2026-10-29.md): every register value, all 49 Uniform
+  Lifetime rows and the SSA research values matched official pages via search extracts
+  (direct retrieval blocked); the verifier now checks RMD divisors against that table.
+- Real Chromium with the pinned Playwright 1.56.1 (Chromium 153.0.8010.12, Noto CJK
+  fonts): **36 checks passed**, including year-audit notice lists for every year and scenario.
+- A sweep exposed one verifier tolerance error (basis rounding after small taxable
+  sales) during development; the bound was corrected before commit. Engine numbers are unchanged.
+
 ## PR #2 review-fix verification (2026-10-28)
 
 Fourth review: the `c88607c` checkout plus these six fixes passed **105 tests**, the **40-year / 300-path** fictional run, **2,990 annual ledger verifier assertions**, historical-fixture checks and all four HTML scenarios through `sh scripts/verify_local.sh`. The 17 new tests in `test_review_round4.py` cover:

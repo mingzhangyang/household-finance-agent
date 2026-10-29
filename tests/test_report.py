@@ -97,7 +97,9 @@ class ReportRoundTrip(unittest.TestCase):
             report=render(fixture(),Path(tmp)/'report.html')
             for mode in ('empty','invalid-json','failed-verification','second-scenario',
                          'numeric-mutations','tax-method-text','missing-plan-json',
-                         'invalid-plan-json','mismatched-plan-json'):
+                         'invalid-plan-json','mismatched-plan-json','invalid-notice',
+                         'duplicate-notice-year','notice-year-outside-ledger',
+                         'invalid-skipped-conversion','invalid-rmd-record'):
                 with self.subTest(mode=mode):
                     check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),mode],
                                          capture_output=True,text=True)
@@ -129,6 +131,28 @@ class ReportRoundTrip(unittest.TestCase):
                             self.assertTrue(verify_replay(audit['result'],exported)['passed'])
                             self.assertEqual(json.dumps(exported,sort_keys=True,ensure_ascii=False),
                                              json.dumps(original,sort_keys=True,ensure_ascii=False))
+
+    @unittest.skipUnless(shutil.which('node'),'Node.js required for report handler regression')
+    def test_report_discloses_blocked_accounts_and_skipped_conversions(self):
+        plan=fixture()
+        for member in plan['members']:
+            member.update(annual_wages_2026=0,retirement_age=40)
+            member.pop('annual_pretax_401k_2026_real')
+            member.pop('pretax_401k_target')
+        plan['accounts'][0]['balance']=10000
+        plan['accounts'][1].update(balance=0,basis=0)
+        plan['roth_conversions']=[dict(year=2027,amount_nominal=1000000,
+                                      **{'from':'ira_a','to':'roth_a'})]
+        with tempfile.TemporaryDirectory() as tmp:
+            report=render(plan,Path(tmp)/'report.html')
+            parser=ReportData();parser.feed(report.read_text())
+            for result in json.loads(parser.raw)['results']:
+                ledger=result['deterministic_annual_ledger']
+                self.assertEqual(ledger['notices'][0]['year'],2027)
+                self.assertGreater(ledger['rows'][0]['unmet_spending'],0)
+            check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),'notices'],
+                                 capture_output=True,text=True)
+            self.assertEqual(check.returncode,0,check.stdout+check.stderr)
 
     @unittest.skipUnless(shutil.which('node'),'Node.js required for report handler regression')
     def test_report_status_and_download_handlers(self):

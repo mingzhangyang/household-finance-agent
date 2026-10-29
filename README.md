@@ -23,17 +23,31 @@ Run `python scripts/collect_evidence.py --output /tmp/hfa-evidence --browser`
 from a clean checkout with Playwright/Chromium installed. Browser unavailability
 is recorded as failure; omitting `--browser` records `not_run`. Neither is a pass.
 
-The M1 acceptance follow-up adds [three independent combined cases](references/m1-acceptance.md)
-covering retirement/SS transitions, RMD/conversion/gains/NIIT, and account depletion
-over nine years. `python scripts/verify_m1_cases.py --output /tmp/m1-differences.json`
-records 461 field/shape comparisons against case-specific Decimal equations.
+The M1 acceptance follow-up adds [independent combined cases](references/m1-acceptance.md)
+covering retirement/SS transitions, RMD/conversion/gains/NIIT, account depletion, and
+stated returns with inflation distinct from hypothetical bracket indexing, over eleven
+years. `python scripts/verify_m1_cases.py --output /tmp/m1-differences.json`
+records 599 field/shape comparisons against case-specific Decimal equations.
 CI installs pinned Playwright/Chromium and CJK fonts, then requires real desktop and
 mobile-viewport acceptance, actual downloads/replay and print output in the supervised
 evidence bundle. Physical devices, scope confirmation and professional sign-off remain pending.
 
+The M1 verification-depth follow-up makes `verify_outputs.py` recompute every restricted
+federal worksheet step and FICA each year from register values retyped in the verifier.
+Given the plan, it also re-derives income timing, returns, RMD activation, conversion
+schedules, withdrawal order, under-60 blocks and whether a reported shortfall is real.
+`--trace` regenerates a traced Monte Carlo path's returns from the seed and checks its
+ledger and manifest entry. See the [verification matrix](references/verification-matrix.md).
+The year audit now lists blocked under-60 accounts, skipped conversions and unmet RMDs.
+Engine numbers are unchanged; a pension amount now requires an explicit start age.
+A [2026-10-29 source re-check](references/source-check-2026-10-29.md) found every register
+value unchanged (via search extracts of official pages; primary-document review pending),
+and the verifier now checks RMD divisors against the confirmed Uniform Lifetime Table.
+Reviewers and the next maintainer should start from the [handover notes](references/handover-2026-10-29.md).
+
 ## Canonical offline verification (free, no Actions quota)
 
-Run `sh scripts/verify_local.sh` from the repo. It checks syntax, all tracked Python tests, the 40-year fictional projection, 300 market paths, independent output verification, the historical return fixture and offline HTML generation. This does **not** mean external tax/SSA certification or complete model calibration. GitHub Actions may be unavailable because the owner's quota is exhausted; do not repeatedly retry billing-blocked jobs. Keep the PR in Draft until exact-head review is complete.
+Run `sh scripts/verify_local.sh` from the repo. It checks syntax, all tracked Python tests, the 40-year fictional projection, 300 market paths, independent output verification, one independently verified traced path, the historical return fixture and offline HTML generation. This does **not** mean external tax/SSA certification or complete model calibration. GitHub Actions may be unavailable because the owner's quota is exhausted; do not repeatedly retry billing-blocked jobs. Keep the PR in Draft until exact-head review is complete.
 
 ## Quick start
 
@@ -43,6 +57,7 @@ python scripts/audit_plan.py run examples/audited-household-2026.json --output r
 python scripts/verify_outputs.py result.json --plan examples/audited-household-2026.json --engine-dir scripts --output verification.json
 python scripts/render_audit.py examples/audited-household-2026.json --output financial_audit_dashboard.html
 python scripts/audit_plan.py trace examples/audited-household-2026.json --path-index 17 --output monte_carlo_path_17.json
+python scripts/verify_outputs.py monte_carlo_path_17.json --plan examples/audited-household-2026.json --trace --trace-result result.json
 python -m unittest discover -s tests -v
 ```
 
@@ -58,7 +73,7 @@ Each scenario's exact plan (including seed and return assumptions) is embedded i
 - Use seeded two-asset correlated Gaussian Monte Carlo (unvalidated returns) with a path manifest, deterministic replay, Wilson sampling interval and code/input SHA256 identifiers.
 - NIIT 3.8% is included in annual cash-funding and taxable dispositions, with modeled NII limited to bank interest and positive long-term realized gains. The verifier independently checks its income base and rate. The IRS $250k joint / $200k single MAGI thresholds are not inflated.
 - The 2026 extra senior deduction phases out each eligible person’s $6,000 by 6% of joint MAGI over $150k before summing: two eligible spouses receive $10,800 at $160k MAGI and $0 at $250k.
-- `verify_outputs.py` is a separately implemented output-only verifier; it recomputes arithmetic from JSON without importing the main engine. Tampering tests intentionally change results to confirm detection.
+- `verify_outputs.py` is a separately implemented output-only verifier; it recomputes arithmetic and the restricted worksheet steps from JSON and retyped register values without importing the main engine. Tampering tests intentionally change results, including coherent multi-field forgeries, to confirm detection.
 
 ## Limits and status
 

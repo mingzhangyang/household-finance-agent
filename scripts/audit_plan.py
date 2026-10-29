@@ -174,8 +174,10 @@ def _validate(p):
         _num(m.get('ss_annual_2026_real_at_chosen_claim_age'),f'{name}.ss_annual_2026_real_at_chosen_claim_age')
         if m.get('ss_estimate_basis')!='2026_real_at_selected_claim_age':
             raise ModelError('SS estimate must be 2026 dollars for exact selected claim age; no automatic claim-age adjustment')
-        _num(m.get('annual_pension_2026_real',0),f'{name}.annual_pension_2026_real')
+        pension=_num(m.get('annual_pension_2026_real',0),f'{name}.annual_pension_2026_real')
         _num(m.get('annual_pretax_401k_2026_real',0),f'{name}.annual_pretax_401k_2026_real')
+        if pension>0 and 'pension_start_age' not in m:
+            raise ModelError(f'{name}: pension amount requires explicit pension_start_age; no default start age is assumed')
         _int(m.get('pension_start_age',65),f'{name}.pension_start_age',40,100)
         # SSA birth-year FRA, rounded up for this whole-year age schema.
         # https://www.ssa.gov/benefits/retirement/planner/agereduction.html
@@ -478,6 +480,17 @@ def _market_paths(p):
         yield path
 
 
+def trace(p,index):
+    """Replay one seeded Monte Carlo path with its complete annual ledger."""
+    validate(p)
+    if isinstance(index,bool) or not isinstance(index,int) or not 0<=index<p['assumptions']['trials']:
+        raise ModelError('trace path index must be between zero and trials-1')
+    path=next(path for i,path in enumerate(_market_paths(p)) if i==index)
+    return {'engine_version':'2.2-auditable-restricted','trial_index':index,
+            'input_sha256':hashlib.sha256(json.dumps(p,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
+            'annual_returns':path,'path_ledger':run_path(p,path,verify=True)}
+
+
 def wilson_interval(success,total,z=1.96):
     if total<=0:raise ModelError('total paths must be positive')
     p=success/total
@@ -578,14 +591,7 @@ def main():
         for plan in plans:validate(plan)
         if args.command=='validate':print('PASS v2 schema and restricted-rule gates');return
         if args.command=='trace':
-            index=args.path_index
-            if index<0 or index>=plans[0]['assumptions']['trials']:
-                raise ModelError('trace path index must be between zero and trials-1')
-            path=next(path for i,path in enumerate(_market_paths(plans[0])) if i==index)
-            ledger=run_path(plans[0],path,verify=True)
-            output={'engine_version':'2.2-auditable-restricted','trial_index':index,
-                    'input_sha256':hashlib.sha256(json.dumps(plans[0],ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
-                    'annual_returns':path,'path_ledger':ledger}
+            output=trace(plans[0],args.path_index)
         elif args.command=='compare':
             keys=[(p['as_of_year'],p['end_year'],p['assumptions']['seed'],p['assumptions']['trials']) for p in plans]
             if len(set(keys))!=1:raise ModelError('comparison must have same years, trials and random seed')

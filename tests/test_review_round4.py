@@ -2,9 +2,9 @@
 import copy
 import unittest
 
-from test_niit_integration import fixture
+from test_niit_integration import fixture, adverse_rmd_trace
 import audit_plan
-from verify_outputs import verify, VerifyFailure
+from verify_outputs import verify, verify_trace, VerifyFailure
 
 
 class AnnualMonteCarloChecks(unittest.TestCase):
@@ -74,15 +74,10 @@ class JournalChecks(unittest.TestCase):
             verify(result,plan)
 
     def test_lowered_rmd_balance_cannot_hide_shortfall(self):
-        plan=fixture()
-        plan['members'][0].update(birth_year=1951,annual_wages_2026=0,annual_pretax_401k_2026_real=0)
-        plan['accounts'][0]['balance']=1000000
-        plan['accounts'][3]['balance']=1000
-        result=audit_plan.evaluate(plan)
-        summary=audit_plan.run_path(plan,[-.999])
-        result['deterministic_annual_ledger']=summary
+        plan,path=adverse_rmd_trace()
+        summary=path['path_ledger']
         row=summary['rows'][0]
-        self.assertTrue(verify(result,plan)['passed'])
+        self.assertTrue(verify_trace(path,plan)['passed'])
         for item in row['rmd']:
             item['previous_dec31_balance']=item['taken']*item['divisor']
             item['required']=item['taken']
@@ -90,7 +85,7 @@ class JournalChecks(unittest.TestCase):
         row['unmet_rmd']=0
         summary.update(failed=False,first_failure_year=None)
         with self.assertRaisesRegex(VerifyFailure,'RMD opening balance'):
-            verify(result,plan)
+            verify_trace(path,plan)
 
     def conversion_result(self):
         plan=fixture()

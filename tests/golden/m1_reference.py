@@ -125,9 +125,100 @@ def account_depletion():
     return dict(rows=rows,failed=True,first_failure_year=2029)
 
 
+def growth_indexing():
+    # Single, born 1966: works in 2027 (age 61), retired in 2028 (age 62).
+    # Plan inflation 3% escalates spending/deferral; the HYPOTHETICAL bracket
+    # index is 2%. Portfolio return 6%-1% fee=5%; cash yield 2%.
+    infl={2027:D('1.03'),2028:D('1.03')**2}
+    index={2027:D('1.02'),2028:D('1.02')**2}
+    r=D('.05')
+    def grow(accounts):
+        return {k:v*(D('.02') if k=='cash' else r) for k,v in accounts.items()}
+    def tops(year):
+        return [D(t)*index[year] for t in (12400,50400,105700,201775)]
+    wages=D(220000)*D('1.05'); deferral=D(20000)*infl[2027]
+    assert deferral<=min(wages,D(24500)*index[2027])
+    a0=dict(cash=D(20000),taxable=D(50000),ira=D(300000),roth=D(0),**{'401k':D(0)})
+    growth1=grow(a0); interest1=growth1['cash']
+    # 2027: ordinary taxable income sits in the indexed 24% bracket.
+    ordinary1=wages-deferral+interest1
+    deduction1=D(16100)*index[2027]
+    taxable1=ordinary1-deduction1
+    t=tops(2027)
+    assert t[2]<taxable1<t[3]
+    ordinary_tax1=D('.10')*t[0]+D('.12')*(t[1]-t[0])+D('.22')*(t[2]-t[1])+D('.24')*(taxable1-t[2])
+    # Published 2027 OASDI cap; Additional Medicare above 200,000 single.
+    oasdi1=D(192300)*D('.062'); medicare1=wages*D('.0145'); extra1=(wages-D(200000))*D('.009')
+    payroll1=oasdi1+medicare1+extra1
+    # A 60,000 real one-time expense forces a partial sale of the appreciated
+    # account: gain fraction g=1-30,000/52,500. Each gain dollar bears 15%
+    # (taxable income is above the indexed 0% zone; ordinary rates would be 24%)
+    # plus 3.8% NIIT, because MAGI exceeds 200,000 by more than NII.
+    value1=a0['taxable']+growth1['taxable']; g=1-D(30000)/value1
+    living1=(D(120000)+D(60000))*infl[2027]
+    cash1=a0['cash']+interest1+wages-deferral
+    sale1=(living1+ordinary_tax1+payroll1+D('.038')*interest1-cash1)/(1-(D('.15')+D('.038'))*g)
+    gain1=g*sale1
+    assert 0<sale1<value1 and D(49450)*index[2027]<taxable1 and taxable1+gain1<t[3]
+    assert ordinary1-D(200000)>=interest1  # NIIT base is all NII
+    niit1=D('.038')*(interest1+gain1); gains_tax1=D('.15')*gain1
+    tax1=ordinary_tax1+gains_tax1+niit1+payroll1
+    basis1=D(30000)-sale1*D(30000)/value1
+    a1={k:a0[k]+growth1[k] for k in a0}
+    a1.update(cash=cash1+sale1-tax1-living1,taxable=value1-sale1,**{'401k':a1['401k']+deferral})
+    assert abs(a1['cash'])<D('.00001')
+    a1['cash']=D(0)
+    # 2028: no wages or cash interest. The whole taxable balance is sold, then
+    # IRA draw D solves D = spending - V2 + T with ordinary income in the
+    # indexed 22% bracket and all realized gain at 15% (below the 22% cap).
+    growth2=grow(a1)
+    value2=a1['taxable']+growth2['taxable']; gain2=value2-basis1
+    living2=D(120000)*infl[2028]
+    deduction2=D(16100)*index[2028]
+    t=tops(2028)
+    base_tax=D('.10')*t[0]+D('.12')*(t[1]-t[0])
+    draw2=(living2-value2+base_tax-D('.22')*(deduction2+t[1])+D('.15')*gain2)/D('.78')
+    taxable2=draw2-deduction2
+    assert value2<living2 and t[1]<taxable2 and taxable2+gain2<t[2] and D(49450)*index[2028]<taxable2
+    assert draw2+gain2<D(200000) and draw2<a1['ira']+growth2['ira']
+    ordinary_tax2=base_tax+D('.22')*(taxable2-t[1]); gains_tax2=D('.15')*gain2
+    tax2=ordinary_tax2+gains_tax2
+    a2={k:a1[k]+growth2[k] for k in a1}
+    a2.update(taxable=D(0),ira=a2['ira']-draw2)
+    rows=[]
+    for year,opening,closing,growth,tax,fields in (
+        (2027,a0,a1,growth1,tax1,dict(wages=wages,taxable_wages=wages-deferral,contributions=deferral,
+            spending=living1,draws={'taxable':sale1},gain=gain1,basis=basis1,payroll=payroll1)),
+        (2028,a1,a2,growth2,tax2,dict(spending=living2,draws={'taxable':value2,'ira':draw2},gain=gain2,
+            basis=D(0),payroll=D(0)))):
+        expected=row(year,opening,closing,tax=tax,**fields)
+        expected.update(market_return=r,inflation_factor=infl[year],growth_by_account=growth,
+            investment_growth_total=sum(growth.values()),
+            closing_total_real=sum(closing.values())/infl[year],rmd=[],conversion_transfers=[])
+        rows.append(expected)
+    rows[0]['tax']=dict(gross_ordinary=ordinary1,adjusted_gross_income=ordinary1+gain1,
+        standard_plus_age_deduction=deduction1,enhanced_senior_deduction=0,deduction_total=deduction1,
+        ordinary_taxable=taxable1,long_term_gain_taxable=gain1,ordinary_tax=ordinary_tax1,
+        capital_gains_tax=gains_tax1,income_tax_method='stacked_capital_gains',
+        federal_income_tax=ordinary_tax1+gains_tax1,niit_net_investment_income=interest1+gain1,
+        niit_tax_base=interest1+gain1,niit_due=niit1,rule_multiplier=index[2027],taxable_social_security=0)
+    rows[0]['payroll_tax']=dict(wage_base_per_person=D(192300),social_security_tax=oasdi1,
+        medicare_tax=medicare1,additional_medicare_tax=extra1,total=payroll1)
+    rows[1]['tax']=dict(gross_ordinary=draw2,adjusted_gross_income=draw2+gain2,
+        standard_plus_age_deduction=deduction2,enhanced_senior_deduction=0,deduction_total=deduction2,
+        ordinary_taxable=taxable2,long_term_gain_taxable=gain2,ordinary_tax=ordinary_tax2,
+        capital_gains_tax=gains_tax2,income_tax_method='stacked_capital_gains',
+        federal_income_tax=tax2,niit_net_investment_income=gain2,niit_tax_base=0,niit_due=0,
+        rule_multiplier=index[2028],taxable_social_security=0)
+    # 2028 has no wages; the hypothetical cap still indexes the published 2027 cap.
+    rows[1]['payroll_tax']=dict(wage_base_per_person=D(192300)*index[2027],total=0)
+    return dict(rows=rows,failed=False,first_failure_year=None)
+
+
 def references():
     with localcontext() as ctx:
         ctx.prec=40
         return {'retirement-transition':retirement_transition(),
                 'rmd-conversion-niit':rmd_conversion_niit(),
-                'account-depletion':account_depletion()}
+                'account-depletion':account_depletion(),
+                'growth-indexing':growth_indexing()}

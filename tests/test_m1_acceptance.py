@@ -47,10 +47,11 @@ class M1Acceptance(unittest.TestCase):
                 elif missing=='closing_accounts': self.assertEqual(first['ira'],'500000')
                 else: self.assertEqual(first['ordinary_tax'],'7004.00')
 
-    def test_three_cross_function_scenarios(self):
+    def test_four_cross_function_scenarios(self):
         report=verify_cases()
-        self.assertEqual(len(report['cases']),3)
-        self.assertEqual(sum(c['years'] for c in report['cases']),9)
+        self.assertEqual([c['id'] for c in report['cases']],
+                         ['retirement-transition','rmd-conversion-niit','account-depletion','growth-indexing'])
+        self.assertEqual(sum(c['years'] for c in report['cases']),11)
         for case in report['cases']:
             with self.subTest(case=case['id']):
                 self.assertTrue(case['passed'],[c for c in case['checks'] if not c['passed']])
