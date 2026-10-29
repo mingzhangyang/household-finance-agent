@@ -125,6 +125,12 @@ if (invalidMode === 'rule-basis-mutations') {
   let cases=0;
   const mutations=[
     basis=>{basis.income_tax_tables.status='published';basis.income_tax_tables.multiplier=1},
+    // Coherent relabel of a projected year as its own published year.
+    basis=>{Object.assign(basis.income_tax_tables,{status:'published',base_year:2027,multiplier:1})},
+    basis=>{Object.assign(basis.elective_deferral_limit,{status:'published',base_year:2027,multiplier:1})},
+    basis=>{basis.income_tax_tables.base_year=2025},
+    basis=>{basis.income_tax_tables.multiplier+=.01},
+    basis=>{basis.oasdi_wage_base.source_id='payroll'},
     basis=>{basis.oasdi_wage_base.status='projected'},
     basis=>{basis.income_tax_tables.status='enacted'},
     basis=>{basis.income_tax_tables.base_year='2026'},
@@ -144,6 +150,18 @@ if (invalidMode === 'rule-basis-mutations') {
   }
   const missing=JSON.parse(raw);delete missing.results[0].deterministic_annual_ledger.rows.at(-1).rule_basis;
   assertRejected(JSON.stringify(missing),true);cases++;
+  // Relabeling basis and income-tax metadata together still contradicts the register.
+  for(const scenario of payload.results.keys()) {
+    const broken=JSON.parse(raw), row=broken.results[scenario].deterministic_annual_ledger.rows[0];
+    Object.assign(row.rule_basis.income_tax_tables,{status:'published',base_year:row.year,multiplier:1});
+    Object.assign(row.tax,{tax_law_year:row.year,rule_multiplier:1,policy:`${row.year} published federal tables`});
+    assertRejected(JSON.stringify(broken),true);cases++;
+  }
+  // Metadata that disagrees with a valid basis also fails closed.
+  for(const change of [tax=>{tax.tax_law_year=2027},tax=>{tax.rule_multiplier+=1e-6},tax=>{tax.policy='2027 published federal tables'}]) {
+    const broken=JSON.parse(raw);change(broken.results[0].deterministic_annual_ledger.rows[0].tax);
+    assertRejected(JSON.stringify(broken),true);cases++;
+  }
   console.log(`PASS: ${cases} malformed or overstated rule-basis labels rejected before rendering`);
   process.exit(0);
 }

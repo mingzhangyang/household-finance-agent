@@ -7,6 +7,7 @@ path; it is NOT IRS law. Fictional household data only.
 """
 import copy
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -89,6 +90,16 @@ class RuleYearResolution(unittest.TestCase):
         self.assertEqual(result['evidence_status']['tax_rules'],
                          'published_tax_year_rules_with_labeled_hypothetical_projection')
         self.assertIn('labeled projected in rule_basis',result['rule_scope'][0])
+
+
+class ReportRegisterCopy(unittest.TestCase):
+    def test_report_template_lists_the_engine_published_years(self):
+        # The report retypes published years and source IDs to refuse overstated labels.
+        template=(ROOT/'assets/audit-template.html').read_text()
+        listed=json.loads(re.search(r'function publishedRuleYears\(\)\{return (\{.*?\});\}',template).group(1))
+        engine={family:{str(year):entry['source_id'] for year,entry in published.items()}
+                for family,published in tax2026.RULE_FAMILIES.items()}
+        self.assertEqual(listed,engine)
 
 
 class PublishingANewYear(unittest.TestCase):

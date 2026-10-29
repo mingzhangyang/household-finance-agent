@@ -176,8 +176,12 @@ async function main() {
       const result=broken.results[scenario], year=laterYear?result.deterministic_annual_ledger.rows.length-1:0;
       if(target==='chart')result.annual_real_percentiles[year].p50='invalid';
       else if(target==='tax-detail')result.deterministic_annual_ledger.rows[year].tax.ordinary_tax='invalid';
-      // A projected year relabeled as published law must not render.
-      else Object.assign(result.deterministic_annual_ledger.rows[year].rule_basis.income_tax_tables,{status:'published',multiplier:1});
+      // A projected year coherently relabeled as its own published year must not render.
+      else {
+        const row=result.deterministic_annual_ledger.rows[year];
+        Object.assign(row.rule_basis.income_tax_tables,{status:'published',base_year:row.year,multiplier:1});
+        Object.assign(row.tax,{tax_law_year:row.year,rule_multiplier:1,policy:`${row.year} published federal tables`});
+      }
       invalidCases.push([`${target}-${scenario}-${year}`,JSON.stringify(broken)]);
     }
   }

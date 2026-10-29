@@ -56,7 +56,8 @@ HFA_BROWSER_EXECUTABLE=/opt/pw-browsers/chromium python scripts/collect_evidence
 ## 6. 评审重点与设计说明
 
 - **两份登记表**：引擎（`tax2026.PUBLISHED_*`）与验证器（`verify_outputs.PUBLISHED_INCOME_TAX`、`OASDI_WAGE_BASE`、`ELECTIVE_DEFERRAL`、`RULE_SOURCES`）分别录入。只改一份会导致验证失败（`tests/test_rule_years.py` 有意演示）。
-- **新增已公布年份的流程**：读官方原文 → 两份登记表同时加入该年和来源 ID → 记录核对 → 从印刷表加已知答案。该年变为 `published`，以后各年改以它为基础推算，结果会变化，须单独开 PR 并重新生成报告。详见 [rules-provenance.md](rules-provenance.md)。
+- **报告模板的已公布年份列表**：`assets/audit-template.html` 的 `publishedRuleYears()` 列出各类规则的已公布年份和来源 ID，报告据此和方案假设年率核对每行标签，并与所得税的 `tax_law_year`、`rule_multiplier`、`policy` 交叉核对（Copilot 在 PR #11 指出：此前把推算年份整体改标为“当年已公布”可以通过报告检查）。测试保证它与引擎登记表一致。
+- **新增已公布年份的流程**：读官方原文 → 引擎、验证器两份登记表和报告模板列表同时加入该年和来源 ID → 记录核对 → 从印刷表加已知答案。该年变为 `published`，以后各年改以它为基础推算，结果会变化，须单独开 PR 并重新生成报告。详见 [rules-provenance.md](rules-provenance.md)。
 - **推算方法的局限**：官方指数化对不同税阶使用不同基年并做取整（见原文复核记录），模型用统一、不取整的假设年率，因此推算值与将来公布的数值会有差异；这正是要逐年标注的原因。
 - **固定法定金额**（Pub 915 基数、NIIT 与附加 Medicare 门槛、税率、2025–2028 年的老年人增强扣除）不属于推算，按现行法律适用。
 

@@ -80,6 +80,20 @@ function requireInteger(value){
  if(!Number.isSafeInteger(requireNumber(value)))throw Error('Invalid integer field');
 }
 function requireFailureYear(value){if(value!==null)requireInteger(value)}
+// Published years and register source IDs per rule family, retyped from
+// references/rules-provenance.md; test_rule_years.py keeps it equal to the engine's.
+function publishedRuleYears(){return {"income_tax_tables":{"2026":"brackets_standard_senior"},"oasdi_wage_base":{"2026":"payroll","2027":"payroll_2027"},"elective_deferral_limit":{"2026":"401k_elective_limit_2026"}};}
+// A year's own published values, else the latest published year indexed at the plan rate.
+function expectedRuleBasis(year,rate){
+ const basis={};
+ for(const [family,sources] of Object.entries(publishedRuleYears())){
+  const years=Object.keys(sources).map(Number),latest=Math.max(...years);
+  if(years.includes(year))basis[family]={status:'published',base_year:year,multiplier:1,source_id:sources[year]};
+  else if(year>latest)basis[family]={status:'projected',base_year:latest,multiplier:Math.pow(1+rate,year-latest),source_id:sources[latest]};
+  else throw Error('Invalid rule basis');
+ }
+ return basis;
+}
 function validateReportData(data){
  // Validate every scenario and year before rendering or registering exports.
  // The saved verification flag alone cannot establish JSON type integrity.
@@ -115,18 +129,21 @@ function validateReportData(data){
   }
   for(const row of rows){
    requireInteger(row.year);
-   // Each rule family is either this year's published values or a projection
-   // from an earlier published year; a projection never reads as published law.
-   const families=['income_tax_tables','oasdi_wage_base','elective_deferral_limit'];
-   if(!row.rule_basis||typeof row.rule_basis!=='object'||Object.keys(row.rule_basis).length!==families.length)throw Error('Invalid rule basis');
-   for(const family of families){
+   // Each rule family must match the published-year register and the plan's
+   // assumed rate, so a projection never reads as published law.
+   const expected=expectedRuleBasis(row.year,requireNumber(data.plans[i].tax_policy.future_bracket_inflation));
+   if(!row.rule_basis||typeof row.rule_basis!=='object'||Object.keys(row.rule_basis).length!==Object.keys(expected).length)throw Error('Invalid rule basis');
+   for(const [family,want] of Object.entries(expected)){
     const basis=row.rule_basis[family];
-    if(!basis||typeof basis!=='object'||typeof basis.source_id!=='string'||!basis.source_id)throw Error('Invalid rule basis');
-    requireInteger(basis.base_year);requireNumber(basis.multiplier);
-    const published=basis.status==='published'&&basis.base_year===row.year&&basis.multiplier===1;
-    const projected=basis.status==='projected'&&basis.base_year<row.year&&basis.multiplier>0;
-    if(!published&&!projected)throw Error('Invalid rule basis');
+    if(!basis||typeof basis!=='object'||Object.keys(basis).length!==4||basis.status!==want.status||
+       basis.base_year!==want.base_year||basis.source_id!==want.source_id||
+       Math.abs(requireNumber(basis.multiplier)-want.multiplier)>5.1e-9)throw Error('Invalid rule basis');
    }
+   // The income-tax metadata must tell the same story as its rule basis.
+   const income=row.rule_basis.income_tax_tables;
+   if(!row.tax||typeof row.tax!=='object'||row.tax.tax_law_year!==income.base_year||row.tax.rule_multiplier!==income.multiplier||
+      row.tax.policy!==(income.status==='published'?`${income.base_year} published federal tables`:
+        `${income.base_year} published federal tables indexed hypothetically to ${row.year}; NOT published ${row.year} law`))throw Error('Invalid rule basis');
    requireNumbers(row,['opening_total','investment_growth_total','wages_gross','wages_taxable',
     'pretax_contributions','social_security_gross','pension_gross','other_after_tax_income',
     'living_expenses_due','living_expenses_paid','unmet_spending','rmd_total','unmet_rmd',

@@ -102,7 +102,9 @@ The M1 verification matrix further records gaps and mutation evidence.
   amount, reason) and cent-visible unmet RMD records, listed verbatim; no new amounts.
 - Year audit rule basis: one line per `rule_basis` family. A projection names its
   published base year, its 8-decimal multiplier and says it is not a published value
-  for that year. Malformed labels, or a projection labeled published, hide conclusions.
+  for that year. Labels must match the report's retyped list of published years and
+  source IDs, the plan's assumed rate and the row's income-tax metadata; otherwise the
+  report hides conclusions and exports.
   Duplicate notice years or years outside the ledger hide conclusions and exports.
   The year status badge uses the engine's USD 0.01 reconciliation gate.
 - Evidence count = input_provenance.register.length; neither this count nor
