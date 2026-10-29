@@ -20,6 +20,15 @@ from tax_extensions import net_investment_income_tax, SOURCE as NIIT_SOURCE
 
 RULESET = 'US_FEDERAL_2026_RESTRICTED_v2.2'
 KINDS = {'cash','taxable','traditional_ira','traditional_401k','roth_ira'}
+# Taxable-account treatments. The legacy label models no distributions and
+# floors each sale's gain at zero; it is kept so earlier plans still replay.
+LEGACY_TAXABLE = 'long_term_proportional_no_loss_offset'
+WITH_DISTRIBUTIONS = 'long_term_proportional_with_distributions'
+# Plan yield key -> ledger field, each a fraction of the prior December 31 balance.
+DISTRIBUTION_YIELDS = {'qualified_dividend_yield':'qualified_dividends',
+                       'nonqualified_dividend_yield':'nonqualified_dividends',
+                       'taxable_interest_yield':'interest',
+                       'capital_gain_distribution_yield':'capital_gain_distributions'}
 RMD_DENOMINATORS = {
     72:27.4,73:26.5,74:25.5,75:24.6,76:23.7,77:22.9,78:22.0,79:21.1,
     80:20.2,81:19.4,82:18.5,83:17.7,84:16.8,85:16.0,86:15.2,87:14.4,
@@ -76,7 +85,7 @@ def _validate(p):
     _allowed(p,['version','name','currency','as_of_year','end_year','members','accounts',
                 'tax_policy','living_expenses_annual_real','events','roth_conversions',
                 'terminal_target_2026_real','withdrawal_order','assumptions','liabilities',
-                'input_provenance','opening_balance_status'], 'plan')
+                'input_provenance','opening_balance_status','capital_loss_carryover_into_2027'], 'plan')
     if not isinstance(p.get('name'),str) or not p['name'].strip():
         raise ModelError('nonempty name required')
     evidence=p.get('input_provenance')
@@ -92,6 +101,8 @@ def _validate(p):
             required.update(f'/accounts/{i}/basis' for i,a in enumerate(p.get('accounts',[])) if a.get('kind')=='taxable')
             required.update(f'/members/{i}/annual_wages_2026' for i,_ in enumerate(p.get('members',[])))
             required.update(f'/members/{i}/ss_annual_2026_real_at_chosen_claim_age' for i,_ in enumerate(p.get('members',[])))
+            if 'capital_loss_carryover_into_2027' in p:
+                required.add('/capital_loss_carryover_into_2027')
             registered={item.get('json_pointer') for item in (reg or []) if item.get('confidence')=='documented'}
             missing=sorted(required-registered)
             if missing:raise ModelError(f'documented_verified missing documented evidence for material fields: {missing}')
@@ -195,7 +206,7 @@ def _validate(p):
     names=set(); count={'cash':0,'taxable':0}
     for acc in accounts:
         if not isinstance(acc,dict): raise ModelError('each account must be object')
-        _allowed(acc,['id','kind','balance','basis','gain_treatment','owner',
+        _allowed(acc,['id','kind','balance','basis','gain_treatment','annual_distributions','owner',
                       'rmd_table','still_working_exception','qualified_distributions_confirmed','fully_pretax_confirmed'],'account')
         aid=acc.get('id'); kind=acc.get('kind')
         if not isinstance(aid,str) or not aid or aid in names:raise ModelError('unique account id required')
@@ -205,8 +216,26 @@ def _validate(p):
         if kind in count:count[kind]+=1
         if kind=='taxable':
             _num(acc.get('basis'),f'{aid}.basis')
-            if acc.get('gain_treatment')!='long_term_proportional_no_loss_offset':
-                raise ModelError('taxable basis and explicitly simplified long-term gain treatment required')
+            treatment=acc.get('gain_treatment')
+            if treatment==WITH_DISTRIBUTIONS:
+                # Distributions are taxed every year; zero yields must be stated, never assumed.
+                dist=acc.get('annual_distributions')
+                _allowed(dist,[*DISTRIBUTION_YIELDS,'handling'],f'{aid}.annual_distributions')
+                if set(dist)!={*DISTRIBUTION_YIELDS,'handling'}:
+                    raise ModelError(f'{aid}: annual_distributions must state every yield (0 if none) and handling')
+                if dist.get('handling')!='reinvested':
+                    raise ModelError(f'{aid}: only reinvested distributions are modeled')
+                for key in DISTRIBUTION_YIELDS:
+                    _num(dist[key],f'{aid}.annual_distributions.{key}',0,.2)
+                if 'capital_loss_carryover_into_2027' not in p:
+                    raise ModelError('taxable distributions treatment requires capital_loss_carryover_into_2027 (0 if none)')
+            elif treatment==LEGACY_TAXABLE:
+                if 'annual_distributions' in acc:
+                    raise ModelError(f'{aid}: legacy no-loss-offset treatment models no distributions; use {WITH_DISTRIBUTIONS}')
+                if 'capital_loss_carryover_into_2027' in p:
+                    raise ModelError('legacy no-loss-offset treatment cannot apply a capital loss carryover')
+            else:
+                raise ModelError('taxable basis and an explicit long-term gain treatment required')
         if kind in ('traditional_ira','traditional_401k','roth_ira'):
             if acc.get('owner') not in member_map: raise ModelError(f'{aid}: owner must be identified')
         if kind in ('traditional_ira','traditional_401k') and acc.get('fully_pretax_confirmed') is not True:
@@ -255,22 +284,29 @@ def _validate(p):
         if af['kind']!='traditional_ira' or at['kind']!='roth_ira' or af['owner']!=at['owner']:
             raise ModelError('only same-owner traditional IRA to Roth IRA conversions supported')
     _num(p.get('terminal_target_2026_real',0),'terminal_target_2026_real')
+    if 'capital_loss_carryover_into_2027' in p:
+        _num(p['capital_loss_carryover_into_2027'],'capital_loss_carryover_into_2027')
     return True
 
 
-def _tax_calc(p,year,retail,wages_by_person,wage_taxable,pension,ss,interest,rmd,conversion,ira_extra,gain):
+def _tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,interest,rmd,conversion,ira_extra,gain):
     ages=[year-m['birth_year'] for m in p['members']]
     fed=federal_tax(wages_taxable=wage_taxable,pension=pension,ira_distributions=rmd+ira_extra,
             roth_conversions=conversion,cash_interest=interest,ltcg=gain,
             ss_benefits=ss,status=p['tax_policy']['filing_status'],ages=ages,year=year,
-            bracket_inflation=p['tax_policy']['future_bracket_inflation'])
+            bracket_inflation=p['tax_policy']['future_bracket_inflation'],
+            taxable_interest=invest['interest'],nonqualified_dividends=invest['nonqualified_dividends'],
+            qualified_dividends=invest['qualified_dividends'],
+            capital_gain_distributions=invest['capital_gain_distributions'],capital_loss_carryover_in=carryover)
     payroll=payroll_tax(wages_by_person,p['tax_policy']['filing_status'],
                        year=year,assumed_rate=p['tax_policy']['future_bracket_inflation'])
-    # No foreign income exclusion, separate investment deductions or passive revenue
-    # are supported. In this restricted scope, MAGI equals AGI and modeled NII
-    # consists only of cash interest and realized positive long-term gains.
+    # No foreign income exclusion, investment deductions or passive revenue are
+    # supported, so MAGI equals AGI. Form 8960 lines 1, 2 and 5a: interest,
+    # all ordinary dividends and Form 1040 line 7a; line 12 floors at zero.
+    nii=max(0.,interest+fed['capital_gain_or_loss_in_agi']+invest['interest']
+            +invest['nonqualified_dividends']+invest['qualified_dividends'])
     niit=net_investment_income_tax(modified_agi=fed['adjusted_gross_income'],
-        net_investment_income=interest+gain,filing_status=p['tax_policy']['filing_status'],tax_year=year)
+        net_investment_income=nii,filing_status=p['tax_policy']['filing_status'],tax_year=year)
     fed['niit_magi_assumed_equal_agi']=niit['modified_agi']
     fed['niit_net_investment_income']=niit['net_investment_income']
     fed['niit_threshold']=niit['threshold']
@@ -293,6 +329,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
     bal={a['id']:float(a['balance']) for a in p['accounts']}
     basis={a['id']:float(a['basis']) for a in p['accounts'] if a['kind']=='taxable'}
     cash_id=next(x['id'] for x in p['accounts'] if x['kind']=='cash')
+    carryover=float(p.get('capital_loss_carryover_into_2027',0))
     rows=[]; fail_years=[]; notices=[]
     for n,year in enumerate(range(y0+1,y1+1),start=1):
         factor=(1+p['assumptions']['inflation'])**n
@@ -305,6 +342,16 @@ def run_path(p, annual_portfolio_returns, verify=True):
             bal[aid]+=delta
             growth[aid]=delta
         cash_interest=growth[cash_id]
+        # Distributions on the prior December 31 balance, reinvested at year-end:
+        # taxed this year and added to basis; already inside the total return.
+        distributions={}
+        for aid,acc in amap.items():
+            if acc['kind']!='taxable':continue
+            dist={field:(start[aid]*acc['annual_distributions'][key] if acc['gain_treatment']==WITH_DISTRIBUTIONS else 0.)
+                  for key,field in DISTRIBUTION_YIELDS.items()}
+            basis[aid]+=sum(dist.values())
+            distributions[aid]=dist
+        invest={field:sum(d[field] for d in distributions.values()) for field in DISTRIBUTION_YIELDS.values()}
         wages_by_person=[]; wage_taxable=0.; pension=0.; ss=0.; contribs={}
         for m in p['members']:
             age=year-m['birth_year']
@@ -359,12 +406,12 @@ def run_path(p, annual_portfolio_returns, verify=True):
         # Iterative funding: tax depends on taxable dispositions and IRA withdrawals.
         # Each iteration restarts from the same pre-withdrawal balances/basis.
         pre_draw=bal.copy();pre_basis=basis.copy()
-        tax_guess=_tax_calc(p,year,None,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,0.,0.)[2]
+        tax_guess=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,0.,0.)[2]
         final=None
         for attempt in range(150):
             working=pre_draw.copy();wbasis=pre_basis.copy()
             required=max(0.,living+tax_guess-working[cash_id])
-            draws={};gain=0.;ira_extra=0.;blocks=[]
+            draws={};gain=0.;ira_extra=0.;blocks=[];sales={}
             for aid in p['withdrawal_order']:
                 if required<=1e-8:break
                 kind=amap[aid]['kind']
@@ -379,17 +426,21 @@ def run_path(p, annual_portfolio_returns, verify=True):
                 if kind=='taxable':
                     ratio=wbasis[aid]/working[aid] if working[aid]>0 else 0.
                     realized_basis=draw*ratio
-                    gain+=max(0.,draw-realized_basis)
+                    # A loss is recognized only under the distributions treatment.
+                    gain+=(draw-realized_basis if amap[aid]['gain_treatment']==WITH_DISTRIBUTIONS
+                           else max(0.,draw-realized_basis))
                     wbasis[aid]=max(0.,wbasis[aid]-realized_basis)
+                    sales[aid]=realized_basis
                 if kind in ('traditional_ira','traditional_401k'):
                     ira_extra+=draw
                 working[aid]-=draw;required-=draw;draws[aid]=draw
-            fed,payroll,tax_new=_tax_calc(p,year,None,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,ira_extra,gain)
-            final=(working,wbasis,draws,gain,ira_extra,fed,payroll,tax_new,blocks)
+            fed,payroll,tax_new=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,ira_extra,gain)
+            final=(working,wbasis,draws,gain,ira_extra,fed,payroll,tax_new,blocks,sales)
             if abs(tax_new-tax_guess)<.00001:break
             tax_guess=tax_new
         else:raise ModelError(f'{year}: tax funding iteration failed to converge')
-        working,wbasis,draws,gain,ira_extra,fed,payroll,tax_due,blocks=final
+        working,wbasis,draws,gain,ira_extra,fed,payroll,tax_due,blocks,sales=final
+        carryover=fed['capital_loss_carryover_out']
         proceeds=sum(draws.values())
         total_cash=pre_draw[cash_id]+proceeds
         tax_paid=min(tax_due,max(0.,total_cash))
@@ -440,6 +491,10 @@ def run_path(p, annual_portfolio_returns, verify=True):
             'roth_converted':round(converted,2),'conversion_transfers':conversion_transfers,'skipped_conversions':skipped,
             'extra_draws':{k:round(v,2) for k,v in draws.items()},
             'realized_ltcg':round(gain,2),'ira_extra_taxable':round(ira_extra,2),
+            'taxable_accounts':{aid:{'gain_treatment':amap[aid]['gain_treatment'],**dist,
+                'reinvested_distributions':sum(dist.values()),'sale_proceeds':draws.get(aid,0.),
+                'basis_sold':sales.get(aid,0.),'sale_gain_or_loss':draws.get(aid,0.)-sales.get(aid,0.)}
+                for aid,dist in distributions.items()},
             'rule_basis':{rule:{**entry,'multiplier':round(entry['multiplier'],8)} for rule,entry in basis_by_rule.items()},
             'tax':{k:(round(v,8) if k in ('rule_multiplier','niit_rate') else round(v,2) if isinstance(v,(float,int)) and not isinstance(v,bool)
                 else [{j:(round(n,2) if isinstance(n,float) else n) for j,n in line.items()} for line in v] if k in ('ordinary_bracket_lines','capital_gain_rate_lines')
@@ -454,7 +509,8 @@ def run_path(p, annual_portfolio_returns, verify=True):
             'account_reconciliation_residuals':{k:round(v,6) for k,v in account_residuals.items()},
             'source_ids':['brackets_standard_senior','capital_gains','social_security_tax','payroll',
                           'payroll_2027','senior_enhanced','additional_medicare','niit',
-                          '401k_elective_limit_2026','rmd_uniform_lifetime','rmd_birth_1959'],
+                          '401k_elective_limit_2026','rmd_uniform_lifetime','rmd_birth_1959',
+                          'capital_loss_limit','capital_loss_carryover','qualified_dividends','investment_income'],
             'account_flows':{aid:{'contribution':contribs.get(aid,0.),
                 'required_distribution':sum(d['taken'] for d in rmd_detail if d['account']==aid),
                 'roth_conversion_out':sum(t['amount'] for t in conversion_transfers if t['from']==aid),
@@ -506,7 +562,7 @@ def wilson_interval(success,total,z=1.96):
 def evidence_status(p):
     """Separate scope and provenance from arithmetic or professional approval."""
     return {
-        'contract_version': '1.1',
+        'contract_version': '1.2',
         'model': 'restricted_research',
         'input': p.get('input_provenance', {}).get('mode', 'not_provided'),
         'input_independently_verified': False,
@@ -581,9 +637,10 @@ def evaluate(p):
         'rule_scope':[
             published_rules_scope(),
             '2026 federal progressive ordinary tax, simplified Social Security taxation, standard/senior deductions, long-term gains, FICA (2027 SSA wage base actual), and selected RMDs modeled.',
-            '2026 NIIT on modeled cash interest and positive realized long-term gains; MAGI assumes no foreign exclusions; thresholds unindexed.',
+            '2026 NIIT on modeled interest, ordinary dividends and Form 1040 line 7a capital gain or allowed loss; MAGI assumes no foreign exclusions; no Form 8960 deductions; thresholds unindexed.',
             'No state tax, AMT, itemization, tax credits, IRMAA/ACA, inherited accounts, income limits, QCD or employer matching.',
-            'Taxable sales use average proportional basis and assume all positive gains long-term; no harvested loss offsets or lot selection.',
+            'Taxable sales use average proportional basis and treat every sale and capital gain distribution as long-term; no lot selection, wash sales or return of capital.',
+            'A taxable account labeled long_term_proportional_with_distributions taxes stated dividend, interest and capital gain distribution yields every year, reinvests them into basis, recognizes sale losses, deducts up to $3,000 of net loss and carries the rest forward (adjusted taxable income adds back the section 151 senior deduction). The legacy no-loss-offset label models no distributions and ignores losses.',
             'Social Security benefit amount is supplied for the selected claiming age, with flat assumed COLA; no SSA earnings record, spouse or survivor optimization.',
             'No mortality, divorce, changes of filing status, half-year ages, early distribution penalties/exceptions, Social Security earnings test, or Roth qualification verification.',
             'All invested accounts share an annual rebalanced stock/bond blend; Gaussian joint returns are hypothetical, not empirically calibrated.',

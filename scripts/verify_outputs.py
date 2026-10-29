@@ -62,6 +62,20 @@ FLOW_KEYS={'contribution','required_distribution','roth_conversion_out','roth_co
 CASH_ONLY_FLOWS=('cash_external_inflow','cash_tax_and_spending_outflow','cash_received_rmd','cash_received_draws')
 # Documented funding-notice text (output-contract.md): one message per blocked account.
 BLOCK_NOTICE='{}: early distributions before 60 not modeled'
+# Taxable-account treatments and contract 1.2 records (output-contract.md). The
+# legacy label models no distributions and never recognizes a loss.
+LEGACY_TAXABLE='long_term_proportional_no_loss_offset'
+WITH_DISTRIBUTIONS='long_term_proportional_with_distributions'
+PLAN_YIELDS={'qualified_dividends':'qualified_dividend_yield','nonqualified_dividends':'nonqualified_dividend_yield',
+             'interest':'taxable_interest_yield','capital_gain_distributions':'capital_gain_distribution_yield'}
+TAXABLE_RECORD_FIELDS={'gain_treatment',*PLAN_YIELDS,'reinvested_distributions','sale_proceeds','basis_sold','sale_gain_or_loss'}
+INVESTMENT_TAX_FIELDS=('taxable_account_interest','nonqualified_dividends','qualified_dividends',
+    'capital_gain_distributions','realized_sale_gain_or_loss','capital_loss_carryover_in',
+    'net_capital_gain_or_loss','capital_loss_deduction','capital_gain_or_loss_in_agi','preferential_income',
+    'capital_loss_adjusted_taxable_income','capital_loss_used','capital_loss_carryover_out')
+# IRC 1211(b), retyped from the register: net capital loss deductible against
+# other income each year; not indexed. Married filing separately is out of scope.
+CAPITAL_LOSS_LIMIT=3000.
 
 class VerifyFailure(ValueError):
     pass
@@ -265,7 +279,7 @@ def _verify(x,plan=None,engine_dir=None):
     if 'input_provenance' in x:
         verify_provenance(x['input_provenance'])
     if 'evidence_status' in x:
-        expected={'contract_version':'1.1','model':'restricted_research',
+        expected={'contract_version':'1.2','model':'restricted_research',
             'input':x['input_provenance']['mode'],'input_independently_verified':False,
             'professional_review':'not_recorded','market_calibration':'not_validated',
             'tax_rules':'published_tax_year_rules_with_labeled_hypothetical_projection',
@@ -350,11 +364,12 @@ def _verify(x,plan=None,engine_dir=None):
             for value,q in zip(values,(.1,.5,.9)):
                 close(value,quant(finals,q),'annual MC terminal percentile',.02)
     ledger=x['deterministic_annual_ledger']['rows']
-    # Contract 1.1 results label every row's rule basis; legacy results without
-    # evidence metadata are still held to the same register values.
+    # Contract 1.2 results label every row's rule basis and carry taxable-account
+    # records; legacy results without evidence metadata are still held to the
+    # same register values under the legacy taxable treatment.
     checks,max_residual=_verify_ledger(x['deterministic_annual_ledger'],x['tax_policy'],
                                        first_year,last_year,plan,
-                                       require_basis='evidence_status' in x)
+                                       current_contract='evidence_status' in x)
     if plan is not None:
         if x['input_sha256']!=plan_sha256(plan):
             raise VerifyFailure('input SHA mismatch')
@@ -433,7 +448,52 @@ def _notice_blocks(notices,first_year,last_year):
     return blocks
 
 
-def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,require_basis=True):
+def _investment_view(row,current_contract):
+    """Taxable-account records and Schedule D amounts recomputed from components.
+
+    Contract 1.2 rows report both; results without evidence metadata predate it
+    and imply the legacy treatment: no distributions or carryover, gains >= 0.
+    """
+    y=row['year']
+    tax=row['tax']
+    records=reported=None
+    if current_contract or 'taxable_accounts' in row:
+        records=row.get('taxable_accounts')
+        if not isinstance(records,dict) or set(records)!=set(row['taxable_basis_end']):
+            raise VerifyFailure(f'{y}: taxable account records must cover exactly the taxable accounts')
+        for aid,record in records.items():
+            if not isinstance(record,dict) or set(record)!=TAXABLE_RECORD_FIELDS:
+                raise VerifyFailure(f'{y}: {aid} taxable account record fields changed')
+            if record['gain_treatment'] not in (LEGACY_TAXABLE,WITH_DISTRIBUTIONS):
+                raise VerifyFailure(f'{y}: {aid} unsupported taxable gain treatment')
+            amounts=[record[key] for key in sorted(TAXABLE_RECORD_FIELDS-{'gain_treatment'})]
+            numeric_vector(amounts,len(amounts),f'{y}: {aid} taxable account record')
+        if any(key not in tax for key in INVESTMENT_TAX_FIELDS):
+            raise VerifyFailure(f'{y}: Schedule D and investment income fields missing')
+        reported={key:tax[key] for key in INVESTMENT_TAX_FIELDS}
+        # Adjusted taxable income for the carryover exists only in a net-loss year.
+        values=[value for key,value in reported.items()
+                if key!='capital_loss_adjusted_taxable_income' or value is not None]
+        numeric_vector(values,len(values),f'{y}: Schedule D and investment income fields')
+    # Unrounded record amounts keep the recomposed AGI within its cent tolerance;
+    # the rounded tax fields are tied to these sums in _journal_checks. The sale
+    # gain is the row's own, which the basis journal checks.
+    total=lambda key:sum(record[key] for record in records.values()) if records else 0.
+    gain=row['realized_ltcg']
+    carry_in=reported['capital_loss_carryover_in'] if reported else 0.
+    # Schedule D lines 15-16 (all long-term), line 21 and Form 1040 line 7a.
+    net=gain+total('capital_gain_distributions')-carry_in
+    deduction=min(CAPITAL_LOSS_LIMIT,-net) if net<0 else 0.
+    # net uses the cent-rounded sale gain and carryover in: up to one more cent.
+    return {'records':records,'reported':reported,'tolerance':.0101 if reported else 0.,
+            'interest':total('interest'),
+            'nonqualified':total('nonqualified_dividends'),'qualified':total('qualified_dividends'),
+            'carry_in':carry_in,'net':net,'deduction':deduction,'line7':net if net>=0 else -deduction,
+            # Qualified Dividends and Capital Gain Tax Worksheet line 4.
+            'preferential':total('qualified_dividends')+max(0.,net)}
+
+
+def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,current_contract=True):
     """Annual checks shared by the deterministic ledger and traced paths.
 
     returns=None selects the deterministic plan-mean path; otherwise the
@@ -459,10 +519,12 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,re
         # IRA amounts retain sub-cent precision across years; exported balances do not.
         unrounded_ira={a['id']:float(a['balance']) for a in plan['accounts']
                        if a['kind']=='traditional_ira'}
+        previous_carry=float(plan.get('capital_loss_carryover_into_2027',0))
     else:
         previous_accounts=ledger[0]['opening_accounts']
         previous_total=ledger[0]['opening_total']
         previous_basis=None
+        previous_carry=None
     if len(ledger)!=last_year-first_year+1:
         raise VerifyFailure('year count mismatched to range')
     notices=_notice_blocks(summary['notices'],first_year,last_year)
@@ -488,6 +550,11 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,re
             numeric_vector(list(row[field].values()),len(row[field]),field)
         for flows in row['account_flows'].values():
             numeric_vector(list(flows.values()),len(flows),'account flows')
+        inv=_investment_view(row,current_contract)
+        # The carryover in is last year's carryover out (each cent-rounded), or the plan's.
+        if previous_carry is not None:
+            expect(inv['carry_in'],previous_carry,f'{y}: capital loss carryover in from the prior year',
+                   .0051 if index==0 and plan is not None else .0101)
         shortfalls=[row[field] for field in ('unmet_spending','unpaid_tax','unmet_rmd')]
         if any(type(value) not in (int,float) or not isfinite(value) or value<0
                or value!=round(value,2) for value in shortfalls):
@@ -543,16 +610,18 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,re
         close(row['wages_taxable'],row['wages_gross']-row['pretax_contributions'],f'{y}: taxable wages')
         ordinary=(row['wages_taxable']+row['pension_gross']+row['rmd_total']+
                   row['ira_extra_taxable']+row['roth_converted']+cash_interest+
-                  tax['taxable_social_security'])
-        agi=ordinary+row['realized_ltcg']
+                  tax['taxable_social_security']+inv['interest']+inv['nonqualified'])
+        agi=ordinary+inv['preferential']-inv['deduction']
         close(tax['gross_ordinary'],ordinary,f'{y}: ordinary income components')
-        close(tax['adjusted_gross_income'],agi,f'{y}: AGI income components')
+        close(tax['adjusted_gross_income'],agi,f'{y}: AGI income components',.05+inv['tolerance'])
         if tax['niit_rate'] != .038:
             raise VerifyFailure(f'{y}: NIIT rate changed')
         if tax['niit_threshold'] != (250000. if status=='mfj' else 200000.):
             raise VerifyFailure(f'{y}: NIIT threshold changed')
-        close(tax['niit_magi_assumed_equal_agi'],agi,f'{y}: NIIT MAGI income components')
-        close(tax['niit_net_investment_income'],row['realized_ltcg']+row['growth_by_account'][row['cash_account_id']],f'{y}: NIIT income')
+        close(tax['niit_magi_assumed_equal_agi'],agi,f'{y}: NIIT MAGI income components',.05+inv['tolerance'])
+        # Form 8960 lines 1, 2, 5a and 12: interest, ordinary dividends, line 7a; floored at zero.
+        investment_income=max(0.,cash_interest+inv['line7']+inv['interest']+inv['nonqualified']+inv['qualified'])
+        close(tax['niit_net_investment_income'],investment_income,f'{y}: NIIT income')
         close(tax['niit_tax_base'],min(tax['niit_net_investment_income'],max(0.,tax['adjusted_gross_income']-tax['niit_threshold'])),f'{y}: NIIT base')
         close(tax['niit_due'],tax['niit_tax_base']*.038,f'{y}: NIIT due')
         # Both totals combine two separately cent-rounded amounts, so a one-cent
@@ -604,8 +673,8 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,re
             checks+=4
             max_residual=max(max_residual,abs(row['closing_accounts'][aid]-expected))
         checks+=27+(plan is not None)+len(row['rmd'])*3
-        _journal_checks(row,previous_basis,expect)
-        _rule_checks(row,policy,plan,expect,require_basis)
+        _journal_checks(row,previous_basis,expect,inv)
+        _rule_checks(row,policy,plan,expect,current_contract,inv)
         if plan is not None:
             path_return=deterministic_return(plan) if returns is None else returns[index]
             _plan_checks(row,plan,path_return,notices.get(y,[]),expect,unrounded_ira)
@@ -630,6 +699,7 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,re
         previous_accounts=row['closing_accounts']
         previous_total=row['closing_total']
         previous_basis=row['taxable_basis_end']
+        previous_carry=inv['reported']['capital_loss_carryover_out'] if inv['reported'] else 0.
     if type(summary['failed']) is not bool or summary['failed']!=bool(failure_years):
         raise VerifyFailure(f'{label} failed summary disagrees with annual rows')
     first_failure=failure_years[0] if failure_years else None
@@ -639,7 +709,7 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,re
     return checks,max_residual
 
 
-def _journal_checks(row,previous_basis,expect):
+def _journal_checks(row,previous_basis,expect,inv):
     """Output-only links between row totals, account journals and balances."""
     y=row['year']
     accounts=row['account_flows']
@@ -658,8 +728,31 @@ def _journal_checks(row,previous_basis,expect):
             nonnegative(value,f'{y}: {field} {aid}')
     for field in ('wages_gross','wages_taxable','pretax_contributions','social_security_gross','pension_gross',
                   'other_after_tax_income','living_expenses_due','living_expenses_paid','rmd_total',
-                  'roth_converted','realized_ltcg','ira_extra_taxable','tax_due_total','tax_paid'):
+                  'roth_converted','ira_extra_taxable','tax_due_total','tax_paid'):
         nonnegative(row[field],f'{y}: {field}')
+    # Distribution records: nonnegative, legacy accounts have none, the reinvested
+    # amount is their sum, and the tax fields are the totals over accounts.
+    records=inv['records']
+    treatments={aid:LEGACY_TAXABLE for aid in row['taxable_basis_end']}
+    reinvested={aid:0. for aid in row['taxable_basis_end']}
+    if records is not None:
+        for aid,record in records.items():
+            treatments[aid]=record['gain_treatment']
+            for key in PLAN_YIELDS:
+                nonnegative(record[key],f'{y}: {aid} {key}')
+                if record['gain_treatment']==LEGACY_TAXABLE and record[key]!=0:
+                    raise VerifyFailure(f'{y}: {aid} legacy no-loss-offset treatment reports distributions')
+            reinvested[aid]=record['reinvested_distributions']
+            total=sum(record[key] for key in PLAN_YIELDS)
+            expect(reinvested[aid],total,f'{y}: {aid} reinvested distributions',1e-9+1e-12*abs(total))
+        reported=inv['reported']
+        for tax_key,key in (('taxable_account_interest','interest'),('nonqualified_dividends','nonqualified_dividends'),
+                            ('qualified_dividends','qualified_dividends'),('capital_gain_distributions','capital_gain_distributions')):
+            total=sum(record[key] for record in records.values())
+            expect(reported[tax_key],total,f'{y}: {tax_key} totals taxable account records',.0051+1e-12*total)
+        nonnegative(reported['capital_loss_carryover_in'],f'{y}: capital loss carryover in')
+    if all(t==LEGACY_TAXABLE for t in treatments.values()):
+        nonnegative(row['realized_ltcg'],f'{y}: realized_ltcg without loss recognition')
     taken={}
     for item in row['rmd']:
         for key in ('previous_dec31_balance','required','taken','unmet','divisor'):
@@ -723,27 +816,65 @@ def _journal_checks(row,previous_basis,expect):
     taxable_proceeds=sum(accounts[aid]['optional_draw'] for aid in row['taxable_basis_end'])
     if row['realized_ltcg']>taxable_proceeds+.0051+1e-12*abs(taxable_proceeds):
         raise VerifyFailure(f'{y}: realized gains exceed taxable-sale proceeds')
-    # Average proportional basis: realized basis = draw x prior basis / value at sale.
+    # Average proportional basis: realized basis = draw x (prior basis plus reinvested
+    # distributions) / value at sale.
+    if previous_basis is not None:
+        _proportional_basis_checks(row,previous_basis,reinvested,treatments,expect)
+    # Each sale record: proceeds are the draw, gain or loss is proceeds less basis sold,
+    # and the realized total floors each legacy sale at zero.
     basis=row['taxable_basis_end']
-    if previous_basis is None:
-        return
+    if records is not None:
+        recognized=0.
+        for aid,record in records.items():
+            draw=accounts[aid]['optional_draw']
+            expect(record['sale_proceeds'],draw,f'{y}: {aid} sale proceeds are the draw',.0051+1e-12*draw)
+            nonnegative(record['basis_sold'],f'{y}: {aid} basis sold')
+            result=record['sale_proceeds']-record['basis_sold']
+            expect(record['sale_gain_or_loss'],result,f'{y}: {aid} sale gain or loss',1e-6+1e-12*abs(record['basis_sold']))
+            recognized+=result if record['gain_treatment']==WITH_DISTRIBUTIONS else max(0.,result)
+            if previous_basis is not None and aid in previous_basis:
+                carried=max(0.,previous_basis[aid]+reinvested[aid]-record['basis_sold'])
+                expect(basis[aid],carried,f'{y}: {aid} basis after reinvestment and sale',
+                       .0101+1e-12*abs(previous_basis[aid]+reinvested[aid]))
+        expect(row['realized_ltcg'],recognized,f'{y}: realized gain from sale records',.0051+1e-12*abs(recognized))
+
+
+def _proportional_basis_checks(row,previous_basis,reinvested,treatments,expect):
+    """Basis and realized gain from the prior basis, reinvestment and value at sale."""
+    y=row['year']
+    accounts=row['account_flows']
+    basis=row['taxable_basis_end']
+    records=row.get('taxable_accounts')
     if set(basis)!=set(previous_basis):
         raise VerifyFailure(f'{y}: taxable basis accounts changed')
     gains=0.
     slack=.0051
-    for aid,prior in previous_basis.items():
+    for aid,before in previous_basis.items():
         flows=accounts[aid]
         if any(flows[key] for key in ('contribution','required_distribution','roth_conversion_in','roth_conversion_out')):
             raise VerifyFailure(f'{y}: taxable account {aid} has retirement-account flows')
+        # Reinvested distributions are unrounded, so the prior basis keeps its 0.005 rounding.
+        prior=before+reinvested[aid]
         draw=flows['optional_draw']
         value=row['opening_accounts'][aid]+row['growth_by_account'][aid]
         if draw<=0:
-            expect(basis[aid],prior,f'{y}: {aid} basis carried forward',.0051+1e-12*abs(prior))
+            # The prior and the new basis are each rounded to the cent once reinvestment adds to it.
+            expect(basis[aid],prior,f'{y}: {aid} basis carried forward with reinvested distributions',
+                   (.0101 if reinvested[aid] else .0051)+1e-12*abs(prior))
             continue
         if value<=.02:
-            # Cent-rounded balances cannot support a ratio check this small.
+            # Cent-rounded balances cannot support a ratio check this small, but
+            # a sale that empties the account uses all of its basis.
             if basis[aid]>prior+.0051:
                 raise VerifyFailure(f'{y}: {aid} basis increased on a sale')
+            sold=records[aid]['basis_sold'] if records is not None and aid in records else None
+            if row['closing_accounts'][aid]==0:
+                expect(basis[aid],0.,f'{y}: {aid} basis after selling the whole account',.0051)
+                if sold is not None:
+                    expect(sold,prior,f'{y}: {aid} basis sold with the whole account',.0051+1e-12*prior)
+            if sold is not None and treatments[aid]==WITH_DISTRIBUTIONS:
+                # A recognized loss can be the whole basis; the sale record carries it.
+                gains+=draw-sold
             slack+=draw
             continue
         # Propagate the cent rounding of prior basis (0.005) and of value at sale
@@ -751,11 +882,14 @@ def _journal_checks(row,previous_basis,expect):
         # |d(used)| <= (draw/value) dB + draw*(B+0.005)*0.01/(value*(value-0.01)).
         used=draw*prior/value
         value_error=draw*(prior+.0050001)*.0100001/(value*(value-.0100001))
-        expect(basis[aid],max(0.,prior-used),f'{y}: {aid} proportional basis after sale',
-               .0051+.0050001*abs(1-draw/value)+value_error+1e-12*prior)
-        gains+=max(0.,draw-used)
+        tolerance=.0051+.0050001*abs(1-draw/value)+value_error+1e-12*prior
+        expect(basis[aid],max(0.,prior-used),f'{y}: {aid} proportional basis after sale',tolerance)
+        if records is not None and aid in records:
+            expect(records[aid]['basis_sold'],used,f'{y}: {aid} proportional basis sold',
+                   .0050001*draw/value+value_error+1e-12*prior)
+        gains+=draw-used if treatments[aid]==WITH_DISTRIBUTIONS else max(0.,draw-used)
         slack+=.0050001*draw/value+value_error
-    expect(row['realized_ltcg'],gains,f'{y}: realized long-term gain from proportional basis',slack+1e-12*gains)
+    expect(row['realized_ltcg'],gains,f'{y}: realized long-term gain from proportional basis',slack+1e-12*abs(gains))
 
 
 def _rule_basis_checks(row,basis,expect):
@@ -775,7 +909,7 @@ def _rule_basis_checks(row,basis,expect):
         expect(got['multiplier'],want['multiplier'],f'{y}: {rule} index from {want["base_year"]}',.0000000051)
 
 
-def _rule_checks(row,policy,plan,expect,require_basis=True):
+def _rule_checks(row,policy,plan,expect,current_contract,inv):
     """Recompute each restricted federal worksheet step from the retyped register."""
     y=row['year']
     tax=row['tax']
@@ -788,14 +922,16 @@ def _rule_checks(row,policy,plan,expect,require_basis=True):
     if tax['year']!=y or type(tax['tax_law_year']) is not int or tax['tax_law_year']!=law_year:
         raise VerifyFailure(f'{y}: tax record year or published law year changed')
     expect(tax['rule_multiplier'],multiplier,f'{y}: hypothetical bracket index',.0000000051)
-    if require_basis or 'rule_basis' in row:
+    if current_contract or 'rule_basis' in row:
         _rule_basis_checks(row,basis,expect)
         if tax['policy']!=income_tax_policy(income,y):
             raise VerifyFailure(f'{y}: income-tax policy disclosure differs from its rule basis')
     benefits=row['social_security_gross']
+    # Publication 915 Worksheet 1 line 3: Form 1040 lines 1z, 2b, 3b, 4b, 5b, 7a and 8.
     other=(row['wages_taxable']+row['pension_gross']+row['rmd_total']+row['ira_extra_taxable']
-           +row['roth_converted']+row['growth_by_account'][row['cash_account_id']]+row['realized_ltcg'])
-    expect(tax['ss_provisional_income'],other+.5*benefits,f'{y}: Social Security provisional income',.0451)
+           +row['roth_converted']+row['growth_by_account'][row['cash_account_id']]+inv['line7']
+           +inv['interest']+inv['nonqualified']+inv['qualified'])
+    expect(tax['ss_provisional_income'],other+.5*benefits,f'{y}: Social Security provisional income',.0451+inv['tolerance'])
     expect(tax['taxable_social_security'],taxable_benefits(benefits,tax['ss_provisional_income'],status),
            f'{y}: taxable Social Security worksheet',.0151)
     if plan is not None:
@@ -808,10 +944,38 @@ def _rule_checks(row,policy,plan,expect,require_basis=True):
         expect(tax['enhanced_senior_deduction'],senior,f'{y}: enhanced senior deduction phaseout',.0061)
     expect(tax['deduction_total'],tax['standard_plus_age_deduction']+tax['enhanced_senior_deduction'],
            f'{y}: deduction total',.0151)
-    ordinary=tax['gross_ordinary']
-    expect(tax['ordinary_taxable'],max(0.,ordinary-tax['deduction_total']),f'{y}: ordinary taxable income',.0151)
-    expect(tax['long_term_gain_taxable'],max(0.,row['realized_ltcg']-max(0.,tax['deduction_total']-ordinary)),
-           f'{y}: taxable long-term gain after unused deduction',.0201)
+    # The allowed capital loss offsets ordinary income first (Form 1040 line 7a).
+    ordinary=tax['gross_ordinary']-inv['deduction']
+    expect(tax['ordinary_taxable'],max(0.,ordinary-tax['deduction_total']),f'{y}: ordinary taxable income',.0151+inv['tolerance'])
+    expect(tax['long_term_gain_taxable'],max(0.,inv['preferential']-max(0.,tax['deduction_total']-ordinary)),
+           f'{y}: taxable preferential income after unused deduction',.0201+2*inv['tolerance'])
+    reported=inv['reported']
+    if reported is not None:
+        expect(reported['realized_sale_gain_or_loss'],row['realized_ltcg'],f'{y}: Schedule D sale gain or loss',.0001)
+        expect(reported['net_capital_gain_or_loss'],inv['net'],f'{y}: Schedule D line 16 net gain or loss',.0151)
+        expect(reported['capital_loss_deduction'],inv['deduction'],f'{y}: capital loss deduction limit',.0151)
+        expect(reported['capital_gain_or_loss_in_agi'],inv['line7'],f'{y}: Form 1040 line 7a',.0151)
+        expect(reported['preferential_income'],inv['preferential'],f'{y}: qualified dividends plus net capital gain',.0151)
+        # Each side sums several cent-rounded amounts: AGI, deductions, the loss.
+        # IRC 1212(b)(2): adjusted taxable income adds the allowed loss and the
+        # section 151 deduction (the 2025-2028 senior deduction) to taxable income
+        # taken before its zero floor; the loss treated as used is the lesser of
+        # the deduction and that amount, floored at zero; the rest carries over.
+        adjusted=(tax['adjusted_gross_income']-tax['deduction_total']+inv['deduction']
+                  +tax['enhanced_senior_deduction'])
+        # Reported only for a net loss; a cent-sized net may round either way.
+        if reported['capital_loss_adjusted_taxable_income'] is None:
+            if inv['net']<-.0151:
+                raise VerifyFailure(f'{y}: net capital loss without adjusted taxable income for its carryover')
+        else:
+            if inv['net']>.0151:
+                raise VerifyFailure(f'{y}: adjusted taxable income reported without a net capital loss')
+            expect(reported['capital_loss_adjusted_taxable_income'],adjusted,
+                   f'{y}: adjusted taxable income for the capital loss carryover',.0401)
+        used=min(inv['deduction'],max(0.,adjusted)) if inv['net']<0 else 0.
+        expect(reported['capital_loss_used'],used,f'{y}: capital loss used this year',.0401)
+        expect(reported['capital_loss_carryover_out'],-inv['net']-used if inv['net']<0 else 0.,
+               f'{y}: capital loss carried to next year',.0601)
     base=tax['ordinary_taxable']
     gains=tax['long_term_gain_taxable']
     portions=bracket_portions(0.,base,status,multiplier,law_year)
@@ -902,7 +1066,8 @@ def _rule_checks(row,policy,plan,expect,require_basis=True):
     # Bases were validated against the income and deduction worksheets above;
     # only the final cent-rounding and source-base rounding remain here.
     independent_income_tax=sum(rate*amount for _,_,rate,amount in portions)+min(stacked,capped)
-    investment_income=row['realized_ltcg']+row['growth_by_account'][row['cash_account_id']]
+    investment_income=(row['growth_by_account'][row['cash_account_id']]+inv['line7']
+                       +inv['interest']+inv['nonqualified']+inv['qualified'])
     independent_niit=.038*min(max(0.,investment_income),
         max(0.,tax['adjusted_gross_income']-(250000. if status=='mfj' else 200000.)))
     independently_due=independent_income_tax+independent_niit+payroll_from_bases
@@ -948,6 +1113,21 @@ def _plan_checks(row,plan,path_return,blocks,expect,unrounded_ira):
     expect(row['growth_by_account'][cash_id],opening_cash*cash_yield,f'{y}: cash interest at plan yield',
            .0051+.005*cash_yield+1e-12*abs(opening_cash))
     expect(row['market_return'],path_return,f'{y}: portfolio return of the plan path',1e-12)
+    # Taxable-account records follow the plan's treatment; distributions are the
+    # stated yields on the prior December 31 balance (exported to the cent).
+    records=row.get('taxable_accounts')
+    if records is not None:
+        taxable={aid:a for aid,a in accounts.items() if a['kind']=='taxable'}
+        if set(records)!=set(taxable):
+            raise VerifyFailure(f'{y}: taxable account records differ from the plan accounts')
+        for aid,account in taxable.items():
+            record=records[aid]
+            if record['gain_treatment']!=account['gain_treatment']:
+                raise VerifyFailure(f'{y}: {aid} gain treatment differs from the plan')
+            opening=row['opening_accounts'][aid]
+            for key,yield_key in PLAN_YIELDS.items():
+                rate=account['annual_distributions'][yield_key] if account['gain_treatment']==WITH_DISTRIBUTIONS else 0.
+                expect(record[key],opening*rate,f'{y}: {aid} {key} at the plan yield',.0051*rate+1e-9+1e-12*abs(opening))
     def owner_age(aid):
         return y-births[accounts[aid]['owner']]
     active={aid for aid,a in accounts.items()
