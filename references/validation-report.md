@@ -7,15 +7,17 @@ This is a repeatable QA record, not an independent CPA/CFP attestation. Execute 
 Local results for this change; not a GitHub Actions run, professional review or
 statutory re-check of the register values.
 
-- `sh scripts/verify_local.sh`: **174 tests**; the 40-year / 300-path fictional run
-  now receives **5,685 verifier assertions** (previously 2,990); exact replay passed;
-  traced path 17 passed with regenerated returns and its manifest entry (5,700 assertions).
+- `sh scripts/verify_local.sh`: **175 tests**; the 40-year / 300-path fictional run
+  now receives **5,715 verifier assertions** (previously 2,990); exact replay passed;
+  traced path 17 passed with regenerated returns and its manifest entry (5,730 assertions).
 - `python scripts/verify_m1_cases.py`: **4 cases / 11 years / 599 comparisons** passed,
   including the new growth, inflation and hypothetical-indexing case.
 - Seeded generated-plan sweeps (`HFA_VERIFIER_FUZZ_PLANS=500`, seeds 7, 8, 9):
-  1,466 valid results and 5,864 traced paths passed; all 49,016 single-field ledger
-  mutations (USD 1, or 1e-6 for rates, returns and factors) were rejected. RMD
-  divisors are excluded because no independently sourced table exists.
+  1,466 valid results and 5,864 traced paths passed; all 49,208 single-field ledger
+  mutations (USD 1, or 1e-6 for rates, returns, factors and RMD divisors) were rejected.
+- [Source re-check](source-check-2026-10-29.md): every register value, all 49 Uniform
+  Lifetime rows and the SSA research values matched official pages via search extracts
+  (direct retrieval blocked); the verifier now checks RMD divisors against that table.
 - Real Chromium with the pinned Playwright 1.56.1 (Chromium 153.0.8010.12, Noto CJK
   fonts): **36 checks passed**, including year-audit notice lists for every year and scenario.
 - A sweep exposed one verifier tolerance error (basis rounding after small taxable

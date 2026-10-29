@@ -1,6 +1,6 @@
 # Rules, constants and primary-source provenance
 
-**Snapshot date: 2026-10-28.** This is an implementation's scoped rule register, not a complete explanation of US tax law. Read the current IRS/SSA pages for any actual transaction.
+**Snapshot date: 2026-10-28; re-checked 2026-10-29.** This is an implementation's scoped rule register, not a complete explanation of US tax law. Read the current IRS/SSA pages for any actual transaction. The [2026-10-29 re-check](source-check-2026-10-29.md) found every value below unchanged, using web-search extracts of the official pages because direct retrieval was blocked; primary-document review is still pending.
 
 | Rule ID | 2026 coefficient / applied algorithm | Official primary source | Status |
 |---|---|---|---|
@@ -13,10 +13,10 @@
 | `payroll_2027` | Actual SSA-published OASDI wage cap **$192,300** in 2027, 6.2% tax | [SSA 2027 COLA](https://www.ssa.gov/cola/factsheets/2027.html) | **Published 2027 exception** to otherwise projected law |
 | `additional_medicare` | 0.9% employee Medicare above $200,000 single / $250,000 MFJ | [IRS Tax Topic 560](https://www.irs.gov/taxtopics/tc560) | Household-level approximation; employer withholding timing excluded |
 | `401k_elective_limit_2026` | Standard employee elective deferral **$24,500**; no age-50 catch-up used in model | [IRS 401(k) limit resource](https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-401k-and-profit-sharing-plan-contribution-limits) | **Later years use an assumed indexed limit** |
-| `rmd_uniform_lifetime` | Uniform Lifetime Table: age 73 divisor 26.5, age 74 25.5, age 75 24.6 etc.; prior December 31 balance / divisor | [IRS Publication 590-B](https://www.irs.gov/publications/p590b) | Only original owner, applicable uniform table, fully pretax retirement holdings |
+| `rmd_uniform_lifetime` | Uniform Lifetime Table: age 73 divisor 26.5, age 74 25.5, age 75 24.6 etc. (all 49 rows, ages 72 to 120+, matched 26 CFR 1.401(a)(9)-9(c) as amended by T.D. 9930 in the 2026-10-29 re-check); prior December 31 balance / divisor | [IRS Publication 590-B](https://www.irs.gov/publications/p590b); [85 FR 72472](https://www.federalregister.gov/documents/2020/11/12/2020-24723/updated-life-expectancy-and-distribution-period-tables-used-for-purposes-of-determining-minimum) | Only original owner, applicable uniform table, fully pretax retirement holdings |
 | `rmd_birth_1959` | Birth 1951–1959: RMD starting age 73; born >=1960: age 75; 1959 cohort has historically ambiguous SECURE 2.0 wording | [IRS 2024 proposed rules](https://www.irs.gov/irb/2024-33_IRB); [2025 CRS analysis](https://www.congress.gov/crs_external_products/RL/PDF/RL34397/RL34397.37.pdf) | Flag 1959 for human review when material |
 
-**Independent verifier copy.** `scripts/verify_outputs.py` retypes the 2026 values above (brackets, standard and age-65 deductions, gain zones, Social Security bases, enhanced senior deduction, FICA caps and rates, Additional Medicare thresholds, base elective limit) instead of importing `tax2026.py`. When a register value changes, change the engine and the verifier and record the source check; a one-sided change fails verification. The RMD divisor table is not duplicated in the verifier.
+**Independent verifier copy.** `scripts/verify_outputs.py` retypes the 2026 values above (brackets, standard and age-65 deductions, gain zones, Social Security bases, enhanced senior deduction, FICA caps and rates, Additional Medicare thresholds, base elective limit) instead of importing `tax2026.py`. It also retypes the Uniform Lifetime Table and checks every RMD divisor against it. When a register value changes, change the engine and the verifier and record the source check; a one-sided change fails verification.
 
 ## Hypothetical projection logic — not law
 

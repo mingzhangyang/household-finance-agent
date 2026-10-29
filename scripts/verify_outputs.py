@@ -37,6 +37,14 @@ EXTRA_MEDICARE_RATE=.009
 EXTRA_MEDICARE_WAGES={'single':200000.,'mfj':250000.}
 OASDI_WAGE_BASE={2026:184500.,2027:192300.}
 ELECTIVE_DEFERRAL_2026=24500.
+# Uniform Lifetime Table, 26 CFR 1.401(a)(9)-9(c) as amended by T.D. 9930
+# (85 FR 72472), distribution years from 2022; row values re-checked 2026-10-29
+# (references/source-check-2026-10-29.md). Age 120 means 120 and over.
+UNIFORM_LIFETIME={72:27.4,73:26.5,74:25.5,75:24.6,76:23.7,77:22.9,78:22.0,79:21.1,
+    80:20.2,81:19.4,82:18.5,83:17.7,84:16.8,85:16.0,86:15.2,87:14.4,88:13.7,89:12.9,
+    90:12.2,91:11.5,92:10.8,93:10.1,94:9.5,95:8.9,96:8.4,97:7.8,98:7.3,99:6.8,
+    100:6.4,101:6.0,102:5.6,103:5.2,104:4.9,105:4.6,106:4.3,107:4.1,108:3.9,109:3.7,
+    110:3.5,111:3.4,112:3.3,113:3.1,114:3.0,115:2.9,116:2.8,117:2.7,118:2.5,119:2.3,120:2.0}
 PRETAX_KINDS=('traditional_ira','traditional_401k')
 RETIREMENT_KINDS=PRETAX_KINDS+('roth_ira',)
 FLOW_KEYS={'contribution','required_distribution','roth_conversion_out','roth_conversion_in',
@@ -336,7 +344,7 @@ def _verify(x,plan=None,engine_dir=None):
             'limitations':['Intermediate annual percentiles and untraced path ledgers require engine replay.',
                            'Rule constants are retyped from the dated source register; statutory currency and applicability are not re-verified.',
                            'Without the plan, income timing, funding order and RMD activation are not checked.',
-                           'RMD divisor values, supplied benefits and input documents are not independently sourced.',
+                           'Supplied benefit amounts and input documents are not independently sourced.',
                            'Not a complete independent tax-return or input-evidence verification.']}
 
 
@@ -590,6 +598,10 @@ def _journal_checks(row,previous_basis,expect):
             nonnegative(item[key],f'{y}: RMD {key}')
         if item['account'] in taken:
             raise VerifyFailure(f'{y}: duplicate RMD record for {item["account"]}')
+        if type(item['age']) is not int or min(item['age'],120) not in UNIFORM_LIFETIME:
+            raise VerifyFailure(f'{y}: RMD age {item["age"]} is outside the Uniform Lifetime Table')
+        expect(item['divisor'],UNIFORM_LIFETIME[min(item['age'],120)],
+               f'{y}: RMD divisor for age {item["age"]} differs from the Uniform Lifetime Table',0)
         taken[item['account']]=item['taken']
     drawn=0.
     for aid,flows in accounts.items():

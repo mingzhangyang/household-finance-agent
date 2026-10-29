@@ -40,6 +40,10 @@ schedules, withdrawal order, under-60 blocks and whether a reported shortfall is
 ledger and manifest entry. See the [verification matrix](references/verification-matrix.md).
 The year audit now lists blocked under-60 accounts, skipped conversions and unmet RMDs.
 Engine numbers are unchanged; a pension amount now requires an explicit start age.
+A [2026-10-29 source re-check](references/source-check-2026-10-29.md) found every register
+value unchanged (via search extracts of official pages; primary-document review pending),
+and the verifier now checks RMD divisors against the confirmed Uniform Lifetime Table.
+Reviewers and the next maintainer should start from the [handover notes](references/handover-2026-10-29.md).
 
 ## Canonical offline verification (free, no Actions quota)
 

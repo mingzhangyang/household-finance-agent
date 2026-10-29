@@ -126,18 +126,42 @@ class OutputOnlyJournalForgeries(unittest.TestCase):
         with self.assertRaisesRegex(VerifyFailure,'spending was paid before taxes'):
             verify(result)
 
-    def test_fake_rmd_failure_with_remaining_balance(self):
+    def rmd_case(self):
         plan=household(birth=1954,cash=50000,ira=26500,living=1000)
         result=audit_plan.evaluate(plan)
-        summary=result['deterministic_annual_ledger']
-        row=summary['rows'][0]
-        item=row['rmd'][0]
-        self.assertEqual(item['required'],1000)
-        # Pretend a larger RMD was due but unmet, via a coherent divisor change.
-        item.update(divisor=26500/1500,required=1500.,unmet=500.)
-        row['unmet_rmd']=500.
-        summary.update(failed=True,first_failure_year=2027)
+        row=first_row(result)
+        self.assertEqual((row['rmd'][0]['divisor'],row['rmd'][0]['required']),(26.5,1000))
+        return plan,result,row
+
+    def test_fake_partial_rmd_with_remaining_balance(self):
+        plan,result,row=self.rmd_case()
+        # Report only 600 of the 1,000 RMD as taken, with untaxed income and
+        # cash moved coherently, so the unmet 400 looks like a funding failure.
+        row['rmd'][0].update(taken=600.,unmet=400.)
+        row['rmd_total']=600.
+        row['unmet_rmd']=400.
+        row['account_flows']['ira']['required_distribution']=600.
+        row['account_flows']['cash']['cash_received_rmd']=600.
+        row['closing_accounts']['ira']+=400
+        row['closing_accounts']['cash']-=400
+        add_untaxed_ordinary(row,-400)
+        result['deterministic_annual_ledger'].update(failed=True,first_failure_year=2027)
         with self.assertRaisesRegex(VerifyFailure,'unmet RMD reported while ira kept a balance'):
+            verify(result)
+
+    def test_rmd_divisor_must_follow_uniform_lifetime_table(self):
+        plan,result,row=self.rmd_case()
+        # Age 73 with the age-72 divisor 27.4: a smaller RMD, coherent journals.
+        required=26500/27.4
+        less=1000-required
+        row['rmd'][0].update(divisor=27.4,required=required,taken=required)
+        row['rmd_total']=round(required,2)
+        row['account_flows']['ira']['required_distribution']=required
+        row['account_flows']['cash']['cash_received_rmd']=required
+        row['closing_accounts']['ira']=round(row['closing_accounts']['ira']+less,2)
+        row['closing_accounts']['cash']=round(row['closing_accounts']['cash']-less,2)
+        add_untaxed_ordinary(row,-less)
+        with self.assertRaisesRegex(VerifyFailure,'RMD divisor for age 73 differs from the Uniform Lifetime Table'):
             verify(result)
 
     def test_raised_basis_after_sale(self):
@@ -561,13 +585,11 @@ class GeneratedOutputsAndSingleFieldMutations(unittest.TestCase):
             rows=result['deterministic_annual_ledger']['rows']
             row_index=rng.randrange(len(rows))
             for path in leaves(rows[row_index]):
-                if path[-1]=='divisor':
-                    continue  # No independently sourced RMD table: documented limit.
                 forged=copy.deepcopy(result)
                 target=forged['deterministic_annual_ledger']['rows'][row_index]
                 for part in path[:-1]:
                     target=target[part]
-                target[path[-1]]+=1e-6 if path[-1] in ('rate','rule_multiplier','niit_rate','market_return','inflation_factor') else 1
+                target[path[-1]]+=1e-6 if path[-1] in ('rate','rule_multiplier','niit_rate','market_return','inflation_factor','divisor') else 1
                 with self.subTest(plan=n,field='.'.join(map(str,path))):
                     with self.assertRaises(VerifyFailure):
                         verify(forged,plan)
