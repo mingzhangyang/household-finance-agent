@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare four frozen fictional scenarios with independent Decimal worksheets.
+"""Compare six frozen fictional scenarios with independent Decimal worksheets.
 
 Exit 1 on any difference outside predeclared tolerances. Does not grant M1
 professional sign-off, validate market assumptions or implement a tax return.
@@ -87,7 +87,8 @@ def verify_cases():
         fixture_sha256=hashlib.sha256(CASES_PATH.read_bytes()).hexdigest(),
         reference_sha256=hashlib.sha256((ROOT/'tests/golden/m1_reference.py').read_bytes()).hexdigest(),
         passed=all(c['passed'] for c in reports),cases=reports,
-        limitations=['Four fictional cases: three zero-return/zero-inflation, one stated return/inflation/indexing case.',
+        limitations=['Six fictional cases: three zero-return/zero-inflation, one stated return/inflation/indexing case, '
+                     'two taxable-account cases (distributions, loss limit, carryover, NIIT).',
                      'Future-year federal tables are hypothetical 2026 rates, frozen or indexed as each case states.',
                      'Not independent professional review or external planning-tool validation.'])
 

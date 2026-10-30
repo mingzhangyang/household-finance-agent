@@ -16,9 +16,10 @@ class TaxExtensionError(ValueError):pass
 def net_investment_income_tax(*,modified_agi,net_investment_income,filing_status,tax_year=2026):
     if isinstance(tax_year,bool) or not isinstance(tax_year,int) or tax_year<2026:raise TaxExtensionError("unsupported tax year")
     if filing_status not in THRESHOLDS:raise TaxExtensionError("unsupported filing status")
-    for label,value in (("modified_agi",modified_agi),("net_investment_income",net_investment_income)):
-        if isinstance(value,bool) or not isinstance(value,(int,float)) or not isfinite(value) or value<0:
-            raise TaxExtensionError(f"{label} must be finite and nonnegative")
+    # AGI, and so MAGI, is negative when an allowed capital loss exceeds other income.
+    for label,value,floor in (("modified_agi",modified_agi,float("-inf")),("net_investment_income",net_investment_income,0.)):
+        if isinstance(value,bool) or not isinstance(value,(int,float)) or not isfinite(value) or value<floor:
+            raise TaxExtensionError(f"{label} must be finite" + (" and nonnegative" if floor==0. else ""))
     threshold=THRESHOLDS[filing_status]
     excess=max(0.,modified_agi-threshold)
     base=min(net_investment_income,excess)

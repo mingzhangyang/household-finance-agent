@@ -42,7 +42,14 @@
       "kind": "taxable",
       "balance": 300000,
       "basis": 250000,
-      "gain_treatment": "long_term_proportional_no_loss_offset"
+      "gain_treatment": "long_term_proportional_with_distributions",
+      "annual_distributions": {
+        "qualified_dividend_yield": 0.012,
+        "nonqualified_dividend_yield": 0.002,
+        "taxable_interest_yield": 0.008,
+        "capital_gain_distribution_yield": 0.002,
+        "handling": "reinvested"
+      }
     },
     {
       "id": "401k_a",
@@ -94,6 +101,7 @@
   ],
   "roth_conversions": [],
   "terminal_target_2026_real": 200000,
+  "capital_loss_carryover_into_2027": 0,
   "withdrawal_order": [
     "cash",
     "brokerage",

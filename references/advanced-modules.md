@@ -32,7 +32,7 @@ Later support debt schedules, principal/interest, refinancing, credit risk and r
 
 ## 8. Advisor/client workflow (future optional)
 
-If the user later wants to serve multiple households: add data segregation, delegated consent, per-household access rights, disclosure, audit logs, data export/deletion, oversight and regulatory/compliance review. Do not treat a ChatGPT conversation or uploaded Skill as a secure multi-tenant financial-advice SaaS.
+If the user later wants to serve multiple households: add data segregation, delegated consent, per-household access rights, disclosure, audit logs, data export/deletion, oversight and regulatory/compliance review. Do not treat an agent conversation (Codex, Claude Code or similar) or an installed Skill as a secure multi-tenant financial-advice SaaS.
 
 ## Release gates for any new numeric module
 

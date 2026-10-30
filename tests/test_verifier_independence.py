@@ -352,6 +352,7 @@ class PlanScheduleForgeries(unittest.TestCase):
         row['closing_accounts']['brokerage']+=5000
         row['closing_accounts']['ira']-=5000
         row['taxable_basis_end']['brokerage']=10000.
+        row['taxable_accounts']['brokerage'].update(sale_proceeds=0.,basis_sold=0.,sale_gain_or_loss=0.)
         add_untaxed_ordinary(row,5000)
         self.assertTrue(verify(result)['passed'])
         with self.assertRaisesRegex(VerifyFailure,'brokerage kept a balance although the withdrawal order'):
@@ -700,9 +701,18 @@ def generated_plan(rng,n):
             m.update(annual_pension_2026_real=rng.uniform(1,40000),pension_start_age=rng.randint(55,75))
         members.append(m)
     value=rng.choice([0,rng.uniform(0,2e6)])
-    accounts=[dict(id='cash',kind='cash',balance=rng.choice([0,rng.uniform(0,3e5)])),
-              dict(id='brokerage',kind='taxable',balance=value,basis=value*rng.uniform(0,1.5),
-                   gain_treatment='long_term_proportional_no_loss_offset')]
+    # Basis far above value makes each sold dollar a large deductible loss (funding fallback).
+    brokerage=dict(id='brokerage',kind='taxable',balance=value,
+                   basis=value*rng.choice([rng.uniform(0,1.5),rng.uniform(1.5,30)]),
+                   gain_treatment='long_term_proportional_no_loss_offset')
+    carryover={}
+    if rng.random()<.5:
+        brokerage.update(gain_treatment='long_term_proportional_with_distributions',annual_distributions=dict(
+            qualified_dividend_yield=rng.choice([0,rng.uniform(0,.05)]),nonqualified_dividend_yield=rng.choice([0,rng.uniform(0,.02)]),
+            taxable_interest_yield=rng.choice([0,rng.uniform(0,.04)]),capital_gain_distribution_yield=rng.choice([0,rng.uniform(0,.03)]),
+            handling='reinvested'))
+        carryover=dict(capital_loss_carryover_into_2027=rng.choice([0,rng.uniform(0,5e4)]))
+    accounts=[dict(id='cash',kind='cash',balance=rng.choice([0,rng.uniform(0,3e5)])),brokerage]
     for m in members:
         accounts.append(dict(id='ira_'+m['id'],kind='traditional_ira',owner=m['id'],balance=rng.uniform(0,2e6),
                              rmd_table='uniform',fully_pretax_confirmed=True))
@@ -732,6 +742,7 @@ def generated_plan(rng,n):
         bond_volatility=rng.uniform(0,.5),equity_bond_correlation=rng.uniform(-1,1),
         annual_investment_fee=rng.uniform(0,.02),cash_yield=rng.uniform(0,.08),trials=4,seed=rng.randint(0,2**32-1))
     p['input_provenance']={'mode':'fictional_demo','register':[]}
+    p.update(carryover)
     return p
 
 

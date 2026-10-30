@@ -1,4 +1,15 @@
-# Output contract 1.1
+# Output contract 1.2
+
+1.2 (2026-10-29, M2 group 1): every annual row adds `taxable_accounts` (one record
+per taxable account) and `T` adds the Schedule D and investment-income fields below.
+Under the new `long_term_proportional_with_distributions` treatment, `realized_ltcg`
+is the signed sale gain or loss and `T.long_term_gain_taxable` is the taxable part of
+preferential income (qualified dividends plus net capital gain). `T.capital_loss_adjusted_taxable_income`
+is `null` unless the year has a net capital loss. `evidence_status.contract_version` is
+`1.2`. Plans with the legacy `long_term_proportional_no_loss_offset` label produce the
+same numbers as contract 1.1 (checked on the example, all four earlier M1 cases and
+variants, every Monte Carlo path); only the added fields, `T.unmodeled`, source links and
+`rule_scope` text differ. The verifier rejects contract 1.1 results that carry evidence status.
 
 1.1 (2026-10-29): every annual row adds `rule_basis`; `T.tax_law_year` is now the
 published year whose income-tax tables apply (still 2026 for every year);
@@ -68,14 +79,18 @@ The M1 verification matrix further records gaps and mutation evidence.
 | Y.rmd_total,unmet_rmd | Sum of taken / unmet | Cent-rounded sums; $1e-8 equality tolerance |
 | Y.roth_converted,conversion_transfers[*].from,to,amount | Internal same-owner transfers, USD nominal | Account IDs, amount, summed taxable conversion checked; with plan, transfers match the schedule in order and fit the post-RMD balance |
 | Y.skipped_conversions[*].year,from,amount,reason | Requested transfer not executed | Failure flag checked; with plan, matches the schedule and the post-RMD balance was insufficient |
-| Y.extra_draws[A],realized_ltcg,ira_extra_taxable,taxable_basis_end[A] | USD nominal; account funding and proportional basis | Draw journals linked; proportional basis and realized gain recomputed with cent-rounding bounds over the whole value interval (first year needs plan); with plan, withdrawal order, under-60 blocks and ordinary taxation of pretax draws checked |
-| T.gross_ordinary,taxable_social_security,adjusted_gross_income,ss_provisional_income | USD nominal; ordinary components and simplified SS formula | Components checked; provisional income and Publication 915 taxable benefit recomputed |
+| Y.extra_draws[A],realized_ltcg,ira_extra_taxable,taxable_basis_end[A] | USD nominal; account funding and proportional basis; `realized_ltcg` is negative for a recognized loss (new treatment) and floors each sale at zero under the legacy label | Draw journals linked; proportional basis (prior basis plus reinvested distributions) and realized gain or loss recomputed with cent-rounding bounds over the whole value interval (first year needs plan); an account sold out has zero basis left; with plan, withdrawal order, under-60 blocks and ordinary taxation of pretax draws checked |
+| Y.taxable_accounts[A].gain_treatment,qualified_dividends,nonqualified_dividends,interest,capital_gain_distributions,reinvested_distributions,sale_proceeds,basis_sold,sale_gain_or_loss | Plan label; USD nominal, unrounded like account flows. Distributions = prior December 31 balance × stated yield, reinvested at year-end; proceeds = the draw; gain or loss = proceeds − basis sold | Exactly the taxable accounts; nonnegative distributions, zero under the legacy label; reinvested = their sum; tax totals = record sums; proceeds = draw; gain = proceeds − basis sold; basis sold proportional; realized_ltcg from the records. With plan: label and each distribution = opening × the plan yield |
+| T.gross_ordinary,taxable_social_security,adjusted_gross_income,ss_provisional_income | USD nominal; ordinary components (now including taxable-account interest and non-qualified dividends) and simplified SS formula; AGI = gross ordinary + preferential income − capital loss deduction, so it can be negative | Components checked; provisional income (Pub 915 line 3: interest, all dividends, Form 1040 line 7a) and the taxable benefit recomputed |
+| T.taxable_account_interest,nonqualified_dividends,qualified_dividends,capital_gain_distributions,realized_sale_gain_or_loss,capital_loss_carryover_in | USD nominal; totals of the taxable records; the sale result; the carryover from the prior year (plan input in the first year) | Equal to record totals and `realized_ltcg`; carryover in = prior row's carryover out (or the plan's), one cent |
+| T.net_capital_gain_or_loss,capital_loss_deduction,capital_gain_or_loss_in_agi,preferential_income | Schedule D line 16 = sale + distributions − carryover in (all long-term); deduction = min($3,000, net loss) (IRC 1211(b)); Form 1040 line 7a; qualified dividends + max(0, line 16) | Recomputed from the components and the retyped $3,000 limit |
+| T.capital_loss_adjusted_taxable_income,capital_loss_used,capital_loss_carryover_out | Loss years only (else null, 0, 0): taxable income before its zero floor + deduction + section 151 senior deduction (IRC 1212(b)(2)); used = min(deduction, max(0, adjusted)); carryover out = net loss − used | Recomputed; null exactly when there is no net loss (one-cent band). The section 151 add-back is an open item for the professional reviewer ([source review](primary-source-review-2026-10-29-taxable-account.md)) |
 | T.standard_plus_age_deduction,enhanced_senior_deduction,deduction_total | USD nominal; indexed standard/age plus temporary senior deduction | Total checked; with plan, indexed standard/age-65 and enhanced senior phaseout recomputed; not full eligibility verification |
-| T.ordinary_taxable,long_term_gain_taxable | USD nominal; deductions applied to ordinary then gains | Recomputed from gross ordinary, deductions and realized gain |
+| T.ordinary_taxable,long_term_gain_taxable | USD nominal; deductions applied to ordinary income (after the capital loss deduction), then to preferential income (qualified dividends plus net gain) | Recomputed from gross ordinary, the loss deduction, deductions and preferential income |
 | T.ordinary_bracket_lines[*].from,to,rate,taxable,tax | USD thresholds (to may be null), decimal rate, portion and product | Product/sum checked; every line's start, top, rate and amount recomputed from the retyped indexed schedule |
 | T.capital_gain_rate_lines[*].rate,taxable,tax | Decimal rate, USD portion and tax | Product/sum checked; stacked zones or capped ordinary portions recomputed |
 | T.ordinary_tax,capital_gains_tax,federal_income_tax,income_tax_method | USD; chosen lesser ordinary-rate-cap / preferred method | Both methods recomputed; reported method must be the lower (one-cent tie tolerance); not all tax law verified |
-| T.niit_magi_assumed_equal_agi,niit_net_investment_income,niit_threshold,niit_tax_base,niit_rate,niit_due,total_federal_income_and_niit | USD except decimal rate; restricted income base and threshold | Independently recomputed NIIT from modeled components; no unsupported income/adjustments |
+| T.niit_magi_assumed_equal_agi,niit_net_investment_income,niit_threshold,niit_tax_base,niit_rate,niit_due,total_federal_income_and_niit | USD except decimal rate; NII = max(0, cash interest + account interest + all ordinary dividends + Form 1040 line 7a) (Form 8960 lines 1, 2, 5a, 12) | Independently recomputed NIIT from modeled components; no Form 8960 Part II deductions or other adjustments |
 | T.tax_law_year,year,rule_multiplier,policy,unmodeled | Published year of the income-tax tables used; row year; index from that year (1 when published); per-year disclosure naming the published year and, for a projection, `NOT published <year> law` | Law year, multiplier and exact disclosure recomputed from the retyped register and plan rate; `unmodeled` by replay; not future legislation |
 | Y.rule_basis[F].status,base_year,multiplier,source_id for F = income_tax_tables, oasdi_wage_base, elective_deferral_limit | `published` (own year, multiplier 1) or `projected` (latest published year × (1+assumed rate)^(year−base_year)); 8-decimal multiplier; register source ID | Recomputed from the verifier's retyped register: a projected year labeled published, or a changed base year, source or index, is rejected; required in contract 1.1 results and traces; shown in the year audit |
 | P.wage_base_per_person,oasdhi_taxable_wages_by_person,additional_medicare_taxable_wages,social_security_tax,medicare_tax,additional_medicare_tax,total | USD nominal, employee FICA only | Published caps (2026, 2027) and later caps projected from the latest published cap per `rule_basis`, rates and Additional Medicare threshold recomputed; covered wages = min(gross wages, base) for a single filer, at least that for joint filers; with plan, per-person covered wages |
@@ -100,6 +115,13 @@ The M1 verification matrix further records gaps and mutation evidence.
   95% describe fixed quantile/interval choices, not predictive confidence.
 - Year audit notices: engine blocked-account messages, skipped conversions (from,
   amount, reason) and cent-visible unmet RMD records, listed verbatim; no new amounts.
+  Also a cent-visible sale loss under the legacy label (`sale_gain_or_loss`, negated)
+  and, in a loss year with a senior deduction, a fixed note that the section 151
+  add-back awaits review.
+- Year audit taxable block: each `taxable_accounts` record and the Schedule D fields,
+  verbatim; a null adjusted taxable income reads “本年无净资本损失”. The report
+  rejects missing, unknown-treatment or non-numeric records, and records whose IDs or
+  treatments differ from the embedded plan's taxable accounts (an empty object included).
 - Year audit rule basis: one line per `rule_basis` family. A projection names its
   published base year, its 8-decimal multiplier and says it is not a published value
   for that year. Labels must match the report's retyped list of published years and

@@ -7,7 +7,8 @@ Exact source revision and run results belong to the PR and CI artifact manifest.
 
 ## Independent inputs, method and acceptance rules
 
-`tests/golden/m1-cases.json` contains four complete **fictional** plans. No real
+`tests/golden/m1-cases.json` contains six complete **fictional** plans (cases 5 and 6
+added 2026-10-29 for the taxable account, M2 group 1). No real
 household documents are needed. `tests/golden/m1_reference.py` derives the answers
 with 40-digit Decimal, case-specific algebra and explicit segment/range assertions.
 It imports only Python's decimal module. It does not import production tax tables,
@@ -147,6 +148,42 @@ balance, and that stacking is below the ordinary-rate alternative.
 |---|---|---:|---:|---:|
 | Growth and indexing | 2027 | 55,479.06 | 378,020.94 | 0.00 |
 | Growth and indexing | 2028 | 15,470.52 | 254,143.46 | 0.00 |
+
+## Case 5: taxable distributions, loss limit and carryover (added 2026-10-29)
+
+Single, born 1957 (70 in 2027), pension 40,000 from 60, no wages or Social Security.
+Cash 0; brokerage 200,000 with basis 260,000 and stated yields: qualified 2%,
+non-qualified 0.5%, interest 1%, capital gain distributions 0.5%, reinvested. Carryover
+in 5,000; spending 60,000; 25% return, no inflation, frozen 2026 tables. Deductions are
+16,100 + 2,050 + 6,000 senior = 24,150 in both years.
+
+2027: distributions on 200,000 are 4,000 / 1,000 / 2,000 / 1,000, so basis is 268,000
+against a value of 250,000 (ratio 1.072): every sale loses money. Assuming the
+3,000 limit binds, AGI = 40,000 + 2,000 + 1,000 + 4,000 − 3,000 = 44,000 and ordinary
+taxable income = 43,000 − 3,000 − 24,150 = 15,850; the 4,000 qualified dividends stay
+in the 0% zone, so tax = 1,240 + .12 × 3,450 = 1,654 and the sale is 21,654. Net loss =
+.072 × 21,654 − 1,000 + 5,000 = 5,559.088 (limit binds, as assumed). Adjusted taxable
+income 19,850 + 3,000 + 6,000 is above 3,000, so 3,000 is used and 2,559.088 carries over.
+
+2028: value 1.25 × 228,346 now exceeds basis 244,786.912 + 9,133.84 reinvested, so the
+sale realizes a gain. Ordinary income 40,000 + 2,283.46 + 1,141.73 gives taxable ordinary
+income in the 12% bracket and tax 2,065.0228; qualified dividends plus the net gain
+(sale gain + 1,141.73 − 2,559.088 carryover) stay in the 0% zone, so the sale is 22,065.0228.
+Range assertions check the 0% zone, the 12% bracket, the senior phaseout and the sign
+of each year's net. Sources: §1211(b), §1212(b), Schedule D instructions worksheet, Form
+1040 instructions p. 38, Pub 550 p. 30 ([taxable-account review](primary-source-review-2026-10-29-taxable-account.md)).
+
+## Case 6: dividends, interest and the allowed loss in NIIT (added 2026-10-29)
+
+Single, 50 in 2027, wages 300,000 equal to spending; zero returns. Brokerage 500,000
+with basis 600,000; qualified 3% and interest 1%, reinvested: basis 620,000, ratio 1.24.
+AGI = 300,000 + 5,000 + 15,000 − 3,000 = 317,000; ordinary taxable income 285,900 in
+the 35% bracket (tax 58,448 + .35 × 29,675); the 15,000 qualified dividends at 15%
+(below the 35% ordinary rate). NII = 5,000 + 15,000 − 3,000 = 17,000, below the 117,000
+MAGI excess, so NIIT = 646. FICA uses the published 2027 cap 192,300, 1.45% and 0.9%
+above 200,000: 17,172.60. The sale equals the tax, 88,902.85; its loss .24 × 88,902.85
+exceeds 3,000, and 18,336.684 carries over. Form 8960 lines 1, 2, 5a and 12 are the source
+of the NII composition.
 
 ## Browser and evidence reproduction
 

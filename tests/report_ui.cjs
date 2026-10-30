@@ -94,7 +94,11 @@ if (invalidMode === 'numeric-mutations') {
     ...['p10','p50','p90','year'].map(key=>['annual_real_percentiles',0,key]),
     ...['ordinary_tax','capital_gains_tax','adjusted_gross_income','taxable_social_security',
         'standard_plus_age_deduction','enhanced_senior_deduction','ordinary_taxable',
-        'long_term_gain_taxable','niit_due','niit_tax_base'].map(key=>['deterministic_annual_ledger','rows',0,'tax',key]),
+        'long_term_gain_taxable','niit_due','niit_tax_base','capital_loss_carryover_in','net_capital_gain_or_loss',
+        'capital_loss_deduction','capital_gain_or_loss_in_agi','preferential_income','capital_loss_used',
+        'capital_loss_carryover_out'].map(key=>['deterministic_annual_ledger','rows',0,'tax',key]),
+    ...['qualified_dividends','nonqualified_dividends','interest','capital_gain_distributions','reinvested_distributions',
+        'sale_proceeds','basis_sold','sale_gain_or_loss'].map(key=>['deterministic_annual_ledger','rows',0,'taxable_accounts','brokerage',key]),
     ...['wages_gross','social_security_gross','pension_gross','pretax_contributions',
         'other_after_tax_income','investment_growth_total','living_expenses_due','living_expenses_paid',
         'opening_total','closing_total','closing_total_real','rmd_total','roth_converted',
@@ -163,6 +167,58 @@ if (invalidMode === 'rule-basis-mutations') {
     assertRejected(JSON.stringify(broken),true);cases++;
   }
   console.log(`PASS: ${cases} malformed or overstated rule-basis labels rejected before rendering`);
+  process.exit(0);
+}
+if (invalidMode === 'taxable-records') {
+  // The year audit lists each taxable record and the Schedule D steps verbatim.
+  const {element}=boot(raw);
+  const row=payload.results[0].deterministic_annual_ledger.rows[0], record=row.taxable_accounts.brokerage, t=row.tax;
+  const usd=v=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
+  const shown=[...element('taxable-details').children,...element('schedule-d-details').children].map(node=>node.textContent);
+  assert.deepEqual(shown.filter((_,i)=>i%2===1),['分配逐年计税，亏损可抵扣',
+    ...[record.qualified_dividends,record.nonqualified_dividends,record.interest,record.capital_gain_distributions,
+        record.reinvested_distributions,record.sale_proceeds,record.basis_sold,record.sale_gain_or_loss,
+        t.capital_loss_carryover_in,t.net_capital_gain_or_loss,t.capital_loss_deduction,t.capital_gain_or_loss_in_agi,
+        t.preferential_income].map(usd),
+    t.capital_loss_adjusted_taxable_income===null?'本年无净资本损失':usd(t.capital_loss_adjusted_taxable_income),
+    ...[t.capital_loss_used,t.capital_loss_carryover_out].map(usd)]);
+  assert.equal(shown[0],'brokerage 计算口径');
+  let cases=0;
+  const mutations=[
+    r=>{delete r.taxable_accounts},
+    r=>{r.taxable_accounts=[]},
+    r=>{r.taxable_accounts.brokerage.gain_treatment='short_term_lots'},
+    r=>{r.taxable_accounts.brokerage.gain_treatment='toString'},
+    r=>{r.taxable_accounts.unknown=r.taxable_accounts.brokerage},
+    r=>{r.taxable_accounts.brokerage=null},
+    r=>{r.tax.capital_loss_adjusted_taxable_income='invalid'},
+    r=>{delete r.tax.capital_loss_carryover_out},
+    // PR #12 review: records must match the plan's taxable accounts and treatment.
+    r=>{r.taxable_accounts={}},
+    r=>{r.taxable_accounts.cash=r.taxable_accounts.brokerage;delete r.taxable_accounts.brokerage},
+    r=>{r.taxable_accounts.cash=JSON.parse(JSON.stringify(r.taxable_accounts.brokerage))},
+    r=>{r.taxable_accounts.brokerage.gain_treatment='long_term_proportional_no_loss_offset'},
+  ];
+  for(const scenario of payload.results.keys()) for(const [index,mutate] of mutations.entries()) {
+    const broken=JSON.parse(raw);
+    mutate(broken.results[scenario].deterministic_annual_ledger.rows.at(-1));
+    try {assertRejected(JSON.stringify(broken),true);}
+    catch(error){error.message=`scenario ${scenario}, mutation ${index}: ${error.message}`;throw error;}
+    cases++;
+  }
+  // Engine-shaped loss records render their notices: a legacy loss left
+  // unrecognized and the carryover reading that awaits professional review.
+  const shaped=JSON.parse(raw), shapedRow=shaped.results[0].deterministic_annual_ledger.rows[0];
+  Object.assign(shapedRow.taxable_accounts.brokerage,{gain_treatment:'long_term_proportional_no_loss_offset',sale_gain_or_loss:-1234.5});
+  shaped.plans[0].accounts.find(a=>a.id==='brokerage').gain_treatment='long_term_proportional_no_loss_offset';
+  for(const later of shaped.results[0].deterministic_annual_ledger.rows)later.taxable_accounts.brokerage.gain_treatment='long_term_proportional_no_loss_offset';
+  shaped.plan_json[0]=JSON.stringify(shaped.plans[0]);
+  Object.assign(shapedRow.tax,{capital_loss_adjusted_taxable_income:-500,enhanced_senior_deduction:6000});
+  const {element:shapedElement}=boot(JSON.stringify(shaped));
+  assert.deepEqual(shapedElement('year-notices').children.map(li=>li.textContent).slice(-2),[
+    '应税账户 brokerage 按旧版口径未确认出售亏损 $1,234.50',
+    '资本损失结转按 IRC §1212(b) 加回 §151 老年人增强扣除计算；IRS 尚未发布适用于该年度的结转工作表，这一处理待复核人确认。']);
+  console.log(`PASS: taxable records shown verbatim; ${cases} malformed records rejected; loss notices rendered`);
   process.exit(0);
 }
 if (invalidMode === 'tax-method-text') {

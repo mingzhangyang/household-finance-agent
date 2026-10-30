@@ -26,7 +26,27 @@ function expectedNotices(result,row) {
   if(notice)for(const block of notice.blocks)items.push('未满 60 岁账户未用于支付：'+block);
   for(const s of row.skipped_conversions)items.push(`Roth 转换未执行：${s.from} 计划转出 ${dollars(s.amount,2)}（${s.reason}）`);
   for(const item of row.rmd)if(Math.round(item.unmet*100)>0)items.push(`RMD 未足额：${item.account} 应提 ${dollars(item.required,2)}，实提 ${dollars(item.taken,2)}`);
+  for(const [id,r] of Object.entries(row.taxable_accounts))
+    if(r.gain_treatment==='long_term_proportional_no_loss_offset'&&Math.round(r.sale_gain_or_loss*100)<0)
+      items.push(`应税账户 ${id} 按旧版口径未确认出售亏损 ${dollars(-r.sale_gain_or_loss,2)}`);
+  if(row.tax.capital_loss_adjusted_taxable_income!==null&&row.tax.enhanced_senior_deduction>0)
+    items.push('资本损失结转按 IRC §1212(b) 加回 §151 老年人增强扣除计算；IRS 尚未发布适用于该年度的结转工作表，这一处理待复核人确认。');
   return items.length?items:['本年度没有提款限制、未执行的转换或 RMD 缺口。'];
+}
+// Taxable records and Schedule D steps, verbatim from the engine row.
+function expectedTaxable(row) {
+  const treatments={long_term_proportional_with_distributions:'分配逐年计税，亏损可抵扣',
+    long_term_proportional_no_loss_offset:'旧版：不计分配，不抵亏损'};
+  const values=[];
+  for(const r of Object.values(row.taxable_accounts))
+    values.push(treatments[r.gain_treatment],...[r.qualified_dividends,r.nonqualified_dividends,r.interest,
+      r.capital_gain_distributions,r.reinvested_distributions,r.sale_proceeds,r.basis_sold,r.sale_gain_or_loss].map(v=>dollars(v,2)));
+  const t=row.tax;
+  values.push(...[t.capital_loss_carryover_in,t.net_capital_gain_or_loss,t.capital_loss_deduction,
+    t.capital_gain_or_loss_in_agi,t.preferential_income].map(v=>dollars(v,2)),
+    t.capital_loss_adjusted_taxable_income===null?'本年无净资本损失':dollars(t.capital_loss_adjusted_taxable_income,2),
+    ...[t.capital_loss_used,t.capital_loss_carryover_out].map(v=>dollars(v,2)));
+  return values;
 }
 function expectedRuleBasis(row) {
   const names={income_tax_tables:'所得税税阶、标准扣除与资本利得门槛',oasdi_wage_base:'社保工资上限',elective_deferral_limit:'401(k) 基本缴款限额'};
@@ -86,6 +106,7 @@ async function main() {
           const ui=await page.evaluate(()=>({
             heading:document.querySelector('#year-heading').textContent,
             tax:[...document.querySelectorAll('#tax-details dd')].map(x=>x.textContent),
+            taxable:[...document.querySelectorAll('#taxable-details dd, #schedule-d-details dd')].map(x=>x.textContent),
             notices:[...document.querySelectorAll('#year-notices li')].map(x=>x.textContent),
             basis:[...document.querySelectorAll('#year-rule-basis li')].map(x=>x.textContent),
             accounts:[...document.querySelectorAll('#account-rows tr')].map(tr=>[...tr.cells].map(td=>td.textContent))
@@ -93,6 +114,7 @@ async function main() {
           assert.equal(ui.heading,`${row.year} 年度逐项审计`);
           assert.deepEqual(ui.notices,expectedNotices(result,row));
           assert.deepEqual(ui.basis,expectedRuleBasis(row));
+          assert.deepEqual(ui.taxable,expectedTaxable(row));
           assert.deepEqual(ui.tax.slice(1),[row.wages_taxable,row.tax.taxable_social_security,
             row.realized_ltcg,row.ira_extra_taxable,row.tax.adjusted_gross_income,
             row.tax.standard_plus_age_deduction,row.tax.enhanced_senior_deduction,row.tax.ordinary_taxable,

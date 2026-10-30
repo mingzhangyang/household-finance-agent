@@ -21,6 +21,10 @@ SOURCES = {
     '401k_elective_limit_2026':'https://www.irs.gov/pub/irs-drop/n-25-67.pdf',
     'rmd_uniform_lifetime':'https://www.irs.gov/publications/p590b',
     'rmd_birth_1959':'https://www.irs.gov/irb/2024-33_IRB',
+    'capital_loss_limit':'https://www.govinfo.gov/content/pkg/USCODE-2023-title26/html/USCODE-2023-title26-subtitleA-chap1-subchapP-partII-sec1211.htm',
+    'capital_loss_carryover':'https://www.govinfo.gov/content/pkg/USCODE-2023-title26/html/USCODE-2023-title26-subtitleA-chap1-subchapP-partII-sec1212.htm',
+    'qualified_dividends':'https://www.irs.gov/pub/irs-pdf/i1040gi.pdf',
+    'investment_income':'https://www.irs.gov/pub/irs-pdf/p550.pdf',
 }
 # Published values by tax year. Add a year only from its official publication
 # (references/rules-provenance.md), never from a projection or forecast.
@@ -51,6 +55,8 @@ BRACKETS = PUBLISHED_INCOME_TAX[2026]['brackets']
 STANDARD = PUBLISHED_INCOME_TAX[2026]['standard']
 LTCG = PUBLISHED_INCOME_TAX[2026]['ltcg']
 # Fixed statutory amounts (Publication 915): not indexed.
+# IRC 1211(b): net capital loss deductible against other income; not indexed.
+CAPITAL_LOSS_LIMIT = 3000.
 SS_THRESHOLDS = {'single':(25000.,34000.,4500.),'mfj':(32000.,44000.,6000.)}
 WAGE_BASE_2026 = PUBLISHED_OASDI_WAGE_BASE[2026]['amount']
 CONTRIB_401K_LIMIT = PUBLISHED_ELECTIVE_DEFERRAL[2026]['amount']
@@ -109,8 +115,12 @@ def progressive_tax_breakdown(income, status, multiplier=1.0, base_year=REFERENC
     return lines
 
 def taxable_social_security(benefits, other_income, status):
-    """Simplified Pub 915 method; no special worksheets."""
-    if status not in SS_THRESHOLDS or min(benefits,other_income)<0:
+    """Simplified Pub 915 method; no special worksheets.
+
+    Worksheet 1 line 3 includes Form 1040 line 7a, so an allowed capital loss
+    can make other income negative; that simply leaves less provisional income.
+    """
+    if status not in SS_THRESHOLDS or benefits<0 or not isfinite(other_income):
         raise ValueError('invalid Social Security calculation')
     lower,upper,plateau = SS_THRESHOLDS[status]
     provisional = other_income + .5*benefits
@@ -140,20 +150,50 @@ def rule_policy(law_year, year, status):
         return f'{law_year} published federal tables'
     return f'{law_year} published federal tables indexed hypothetically to {year}; NOT published {year} law'
 
+def capital_loss_carryover(net_capital, loss_deduction, taxable_income, section_151_deduction):
+    """IRC 1212(b)(2): the part of a net loss treated as used this year is the
+    lesser of the allowed deduction and adjusted taxable income (taxable income,
+    negative if deductions exceed income, plus the allowed loss and the section
+    151 deduction, floored at zero as in the Capital Loss Carryover Worksheet).
+    Every modeled gain is long-term, so only the total carryover matters."""
+    if net_capital>=0:
+        return 0.,0.
+    used=min(loss_deduction,max(0.,taxable_income+loss_deduction+section_151_deduction))
+    return used,-net_capital-used
+
 def federal_tax(*, wages_taxable, pension, ira_distributions, roth_conversions, cash_interest,
-                ltcg, ss_benefits, status, ages, year, bracket_inflation=0.):
-    """Federal income tax: no credits, itemization, state tax or NIIT."""
+                ltcg, ss_benefits, status, ages, year, bracket_inflation=0.,
+                taxable_interest=0., nonqualified_dividends=0., qualified_dividends=0.,
+                capital_gain_distributions=0., capital_loss_carryover_in=0.):
+    """Federal income tax: no credits, itemization, state tax or NIIT.
+
+    ltcg is the year's realized long-term sale gain, negative for a loss.
+    Schedule D nets it with capital gain distributions and the carryover in;
+    a net loss is deductible up to CAPITAL_LOSS_LIMIT and the rest carries over.
+    Qualified dividends join net capital gain at the preferential rates.
+    """
     if status not in BRACKETS or year < 2026 or not 0 <= bracket_inflation <= .1:
         raise ValueError('unsupported tax policy')
-    values=(wages_taxable,pension,ira_distributions,roth_conversions,cash_interest,ltcg,ss_benefits)
-    if any(not isfinite(x) or x<0 for x in values): raise ValueError('negative or nonfinite taxable income')
+    values=(wages_taxable,pension,ira_distributions,roth_conversions,cash_interest,ss_benefits,
+            taxable_interest,nonqualified_dividends,qualified_dividends,
+            capital_gain_distributions,capital_loss_carryover_in)
+    if any(not isfinite(x) or x<0 for x in values) or not isfinite(ltcg):
+        raise ValueError('negative or nonfinite taxable income')
     if len(ages)!=(2 if status=='mfj' else 1): raise ValueError('household/filing mismatch')
     law_year,idx,rule_status=rule_year(PUBLISHED_INCOME_TAX,year,bracket_inflation)
     law=PUBLISHED_INCOME_TAX[law_year]
-    other=wages_taxable+pension+ira_distributions+roth_conversions+cash_interest+ltcg
+    # Schedule D lines 15-16 (all long-term), line 21 and Form 1040 line 7a.
+    net_capital=ltcg+capital_gain_distributions-capital_loss_carryover_in
+    loss_deduction=min(CAPITAL_LOSS_LIMIT,-net_capital) if net_capital<0 else 0.
+    capital_line=net_capital if net_capital>=0 else -loss_deduction
+    # Qualified Dividends and Capital Gain Tax Worksheet line 4.
+    preferential=qualified_dividends+max(0.,net_capital)
+    other=(wages_taxable+pension+ira_distributions+roth_conversions+cash_interest+capital_line
+           +taxable_interest+nonqualified_dividends+qualified_dividends)
     ss_taxable=taxable_social_security(ss_benefits,other,status)
-    ordinary=wages_taxable+pension+ira_distributions+roth_conversions+cash_interest+ss_taxable
-    agi=ordinary+ltcg
+    ordinary=(wages_taxable+pension+ira_distributions+roth_conversions+cash_interest+ss_taxable
+              +taxable_interest+nonqualified_dividends)
+    agi=ordinary+preferential-loss_deduction
     elderly=sum(age>=65 for age in ages)
     senior_std=elderly*law['age_65_addition'][status]*idx
     std_deduction=(law['standard'][status]*idx)+senior_std
@@ -164,8 +204,12 @@ def federal_tax(*, wages_taxable, pension, ira_distributions, roth_conversions, 
         # then add the amounts for eligible spouses.
         enhanced=elderly*max(0.,6000.-.06*max(0.,agi-threshold))
     deduction=std_deduction+enhanced
-    taxable_ordinary=max(0.,ordinary-deduction)
-    taxable_pref=max(0.,ltcg-max(0.,deduction-ordinary))
+    # The allowed loss offsets ordinary income, which can then be negative.
+    ordinary_after_loss=ordinary-loss_deduction
+    taxable_ordinary=max(0.,ordinary_after_loss-deduction)
+    taxable_pref=max(0.,preferential-max(0.,deduction-ordinary_after_loss))
+    # Section 151(d)(5)(C) holds the 2025-2028 senior deduction.
+    loss_used,carryover_out=capital_loss_carryover(net_capital,loss_deduction,agi-deduction,enhanced)
     ord_tax=progressive_tax(taxable_ordinary,status,idx,law_year)
     zerothr,mid_thr=(t*idx for t in law['ltcg'][status])
     zero_gain=max(0.,min(taxable_pref,zerothr-taxable_ordinary))
@@ -195,11 +239,18 @@ def federal_tax(*, wages_taxable, pension, ira_distributions, roth_conversions, 
         'ordinary_tax':ord_tax,'capital_gains_tax':pref_tax,
         'income_tax_method':method,
         'ss_provisional_income':other+.5*ss_benefits,
+        'taxable_account_interest':taxable_interest,'nonqualified_dividends':nonqualified_dividends,
+        'qualified_dividends':qualified_dividends,'capital_gain_distributions':capital_gain_distributions,
+        'realized_sale_gain_or_loss':ltcg,'capital_loss_carryover_in':capital_loss_carryover_in,
+        'net_capital_gain_or_loss':net_capital,'capital_loss_deduction':loss_deduction,
+        'capital_gain_or_loss_in_agi':capital_line,'preferential_income':preferential,
+        'capital_loss_adjusted_taxable_income':agi-deduction+loss_deduction+enhanced if net_capital<0 else None,
+        'capital_loss_used':loss_used,'capital_loss_carryover_out':carryover_out,
         'ordinary_bracket_lines':progressive_tax_breakdown(taxable_ordinary,status,idx,law_year),
         'capital_gain_rate_lines':gain_lines,
         'federal_income_tax':ord_tax+pref_tax,'tax_law_year':law_year,
         'year':year,'rule_multiplier':idx,
         'policy':rule_policy(law_year,year,rule_status),
         'unmodeled':['state/local income taxes','NIIT','tax credits','itemized deductions',
-            'AMT','special retirement deductions','capital-loss offset',
-            'taxable dividends','ACA/IRMAA','early-withdrawal exceptions']}
+            'AMT','special retirement deductions','short-term lots and wash sales',
+            'ACA/IRMAA','early-withdrawal exceptions']}
