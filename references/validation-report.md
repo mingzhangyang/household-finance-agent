@@ -2,6 +2,16 @@
 
 This is a repeatable QA record, not an independent CPA/CFP attestation. Execute the entire test suite and save the generated result and verifier JSON before claiming any count of passing tests. Output in `model_validation_report.md` outside the skill contains the latest complete fixture-specific numbers.
 
+## PR #12 second review round (2026-10-30)
+
+- The bisection stopped at a relative bracket width of 1e-12 and aborted a supported plan
+  whose loss response is about 1.2e7 dollars of tax per dollar sold ($10 account, $1 billion
+  basis). It now halves until the residual passes or the floating-point midpoint stops
+  moving; the plan funds at $1,400.0000017 tax with a $166.67 loss (hand solution
+  20 / (0.12 × (1e8 − 1) + 1) sold). The regression test fails on `d5c9f16`.
+- `sh scripts/verify_local.sh`: **237 tests**. Sweeps (300 plans, seeds 7, 8, 9): 881 valid
+  results and 3,524 traced paths passed; all 34,564 single-field mutations were rejected.
+
 ## PR #12 review fixes (2026-10-30)
 
 Three high-severity Copilot findings; each new test fails on `fda0f0f` and passes after the fix.

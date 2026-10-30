@@ -283,6 +283,22 @@ class FundingWithSteepLosses(unittest.TestCase):
         self.assertTrue(verify(result,plan)['passed'])
 
 
+class FundingAtFloatResolution(unittest.TestCase):
+    def test_root_needed_to_the_last_representable_digit(self):
+        # PR #12 review: $10 account with $1 billion basis, pension 30,000, spending
+        # 28,600. Tax with no sale is 1,420; a sale S = T - 1,400 loses (1e8 - 1)S,
+        # which lowers tax by .12 per dollar of loss, so T = 1,400 + 20 / (1.2e7 - .12 + 1),
+        # a sale of about 1.67e-6 and a loss of about 166.67 (below the 3,000 limit).
+        plan=with_distributions(household(birth=1966,brokerage=10,basis=1e9,living=28600))
+        plan['members'][0].update(annual_pension_2026_real=30000,pension_start_age=60)
+        result=evaluate(plan)
+        row=rows(result)[0]
+        sale=20/(.12*(1e8-1)+1)
+        self.assertAlmostEqual(row['tax']['capital_loss_deduction'],round(sale*(1e8-1),2),delta=.011)
+        self.assertEqual((row['tax_due_total'],row['unpaid_tax'],row['unmet_spending']),(1400,0,0))
+        self.assertTrue(verify(result,plan)['passed'])
+
+
 class VerifierRejectsForgedInvestmentRecords(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

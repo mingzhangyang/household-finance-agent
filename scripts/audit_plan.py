@@ -327,15 +327,17 @@ def _bisect_funding(fund,low,high,year):
             if fund(high)[7]<high:break
             high*=2
         else:raise ModelError(f'{year}: tax funding has no bounded solution')
-    for _ in range(200):
+    # Halve until the residual passes or the midpoint stops moving: a steep loss
+    # response can need the root to the last representable digit.
+    for _ in range(2100):
         middle=(low+high)/2
+        if not low<middle<high:break
         final=fund(middle)
         if abs(final[7]-middle)<.00001:return final
         if final[7]>middle:low=middle
         else:high=middle
-        if high-low<=1e-12*max(1.,high):break
-    # Float spacing can stop short of the tolerance on a very steep response; the
-    # low side leaves no idle cash and at most a sub-cent unpaid amount.
+    # Adjacent floats can still straddle the tolerance; the low side leaves no
+    # idle cash and at most a sub-cent unpaid amount.
     final=fund(low)
     if 0<=final[7]-low<.001:return final
     raise ModelError(f'{year}: tax funding iteration failed to converge')
