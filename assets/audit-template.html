@@ -171,9 +171,14 @@ function validateReportData(data){
     'preferential_income','capital_loss_used','capital_loss_carryover_out']);
    // Adjusted taxable income for the carryover exists only in a net-loss year.
    if(row.tax.capital_loss_adjusted_taxable_income!==null)requireNumber(row.tax.capital_loss_adjusted_taxable_income);
+   // Exactly one record per taxable account of the embedded plan, with its treatment:
+   // a dropped record would hide the account's audit details and loss notice.
    if(!row.taxable_accounts||typeof row.taxable_accounts!=='object'||Array.isArray(row.taxable_accounts))throw Error('Invalid taxable account records');
+   const planTaxable=new Map(data.plans[i].accounts.filter(a=>a.kind==='taxable').map(a=>[a.id,a.gain_treatment]));
+   if(Object.keys(row.taxable_accounts).length!==planTaxable.size)throw Error('Invalid taxable account records');
    for(const [id,record] of Object.entries(row.taxable_accounts)){
-    if(!(id in row.closing_accounts)||!Object.hasOwn(taxableTreatments(),record&&record.gain_treatment))throw Error('Invalid taxable account record');
+    if(!planTaxable.has(id)||!(id in row.closing_accounts)||!Object.hasOwn(taxableTreatments(),record&&record.gain_treatment)||
+       record.gain_treatment!==planTaxable.get(id))throw Error('Invalid taxable account record');
     requireNumbers(record,['qualified_dividends','nonqualified_dividends','interest','capital_gain_distributions',
      'reinvested_distributions','sale_proceeds','basis_sold','sale_gain_or_loss']);
    }

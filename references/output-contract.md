@@ -120,7 +120,8 @@ The M1 verification matrix further records gaps and mutation evidence.
   add-back awaits review.
 - Year audit taxable block: each `taxable_accounts` record and the Schedule D fields,
   verbatim; a null adjusted taxable income reads “本年无净资本损失”. The report
-  rejects missing, unknown-treatment or non-numeric records.
+  rejects missing, unknown-treatment or non-numeric records, and records whose IDs or
+  treatments differ from the embedded plan's taxable accounts (an empty object included).
 - Year audit rule basis: one line per `rule_basis` family. A projection names its
   published base year, its 8-decimal multiplier and says it is not a published value
   for that year. Labels must match the report's retyped list of published years and

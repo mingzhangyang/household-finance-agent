@@ -249,6 +249,40 @@ class EngineIntegration(unittest.TestCase):
             verify(forged,plan)
 
 
+class FundingWithSteepLosses(unittest.TestCase):
+    """PR #12 review: with basis far above value, each sold dollar is a large
+    deductible loss, tax falls faster than the sale grows, and fixed-point steps
+    alternate. The bracketed fallback must find the unique funding solution."""
+    def plan(self,basis):
+        plan=with_distributions(household(birth=1966,brokerage=100000,basis=basis,living=29000))
+        plan['members'][0].update(annual_pension_2026_real=30000,pension_start_age=60)
+        return plan
+
+    def test_reported_case_converges_to_the_hand_solution(self):
+        # Single, 61 in 2027, frozen 2026 tables; ratio 12 so a sale S loses 11S.
+        # Taxable income 30,000 - 11S - 16,100 stays below 12,400: T = .1(13,900 - 11S)
+        # and S = T - 1,000 (pension 30,000 against spending 29,000), so
+        # T = 2,490 / 2.1 = 1,185.714..., S = 185.714..., loss 2,042.86 < 3,000.
+        plan=self.plan(1200000)
+        result=evaluate(plan)
+        row=rows(result)[0]
+        self.assertAlmostEqual(row['tax_due_total'],2490/2.1,delta=.006)
+        self.assertAlmostEqual(row['extra_draws']['brokerage'],2490/2.1-1000,delta=.006)
+        self.assertEqual((row['unpaid_tax'],row['unmet_spending'],row['closing_accounts']['cash']),(0,0,0))
+        self.assertTrue(verify(result,plan,ROOT/'scripts')['passed'])
+        self.assertTrue(verify_trace(trace(plan,0),plan,result)['passed'])
+
+    def test_extreme_basis_ratio_still_funds(self):
+        # Ratio 10,000: the loss hits the 3,000 limit within a cent of sale, so tax
+        # is 0.1 x (13,900 - 3,000) = 1,090 and the sale 90.
+        plan=self.plan(1e9)
+        result=evaluate(plan)
+        row=rows(result)[0]
+        self.assertAlmostEqual(row['tax_due_total'],1090,delta=.006)
+        self.assertAlmostEqual(row['extra_draws']['brokerage'],90,delta=.006)
+        self.assertTrue(verify(result,plan)['passed'])
+
+
 class VerifierRejectsForgedInvestmentRecords(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -314,6 +348,21 @@ class VerifierRejectsForgedInvestmentRecords(unittest.TestCase):
             verify(r)
         with self.assertRaises(VerifyFailure):
             verify(r,self.plan)
+
+    def test_legacy_label_cannot_carry_a_loss(self):
+        # PR #12 review: zero yields, no sale and a 10,000 opening carryover, then
+        # every record relabeled legacy. All amounts stay coherent, so only the
+        # legacy rule (inputs forbid this combination) rejects it without the plan.
+        plan=with_distributions(household(birth=1956,cash=100000,brokerage=50000,basis=50000,living=1000,years=2),
+                                carryover=10000)
+        r=evaluate(plan)
+        self.assertEqual(rows(r)[0]['tax']['capital_loss_deduction'],3000)
+        for row in rows(r):
+            row['taxable_accounts']['brokerage']['gain_treatment']=LEGACY
+        with self.assertRaisesRegex(VerifyFailure,'legacy no-loss-offset treatment cannot carry a capital loss'):
+            verify(r)
+        with self.assertRaises(VerifyFailure):
+            verify(r,plan)
 
     def test_records_missing_from_a_current_result(self):
         r=self.forged()

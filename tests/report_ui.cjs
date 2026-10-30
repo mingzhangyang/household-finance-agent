@@ -193,6 +193,11 @@ if (invalidMode === 'taxable-records') {
     r=>{r.taxable_accounts.brokerage=null},
     r=>{r.tax.capital_loss_adjusted_taxable_income='invalid'},
     r=>{delete r.tax.capital_loss_carryover_out},
+    // PR #12 review: records must match the plan's taxable accounts and treatment.
+    r=>{r.taxable_accounts={}},
+    r=>{r.taxable_accounts.cash=r.taxable_accounts.brokerage;delete r.taxable_accounts.brokerage},
+    r=>{r.taxable_accounts.cash=JSON.parse(JSON.stringify(r.taxable_accounts.brokerage))},
+    r=>{r.taxable_accounts.brokerage.gain_treatment='long_term_proportional_no_loss_offset'},
   ];
   for(const scenario of payload.results.keys()) for(const [index,mutate] of mutations.entries()) {
     const broken=JSON.parse(raw);
@@ -205,6 +210,9 @@ if (invalidMode === 'taxable-records') {
   // unrecognized and the carryover reading that awaits professional review.
   const shaped=JSON.parse(raw), shapedRow=shaped.results[0].deterministic_annual_ledger.rows[0];
   Object.assign(shapedRow.taxable_accounts.brokerage,{gain_treatment:'long_term_proportional_no_loss_offset',sale_gain_or_loss:-1234.5});
+  shaped.plans[0].accounts.find(a=>a.id==='brokerage').gain_treatment='long_term_proportional_no_loss_offset';
+  for(const later of shaped.results[0].deterministic_annual_ledger.rows)later.taxable_accounts.brokerage.gain_treatment='long_term_proportional_no_loss_offset';
+  shaped.plan_json[0]=JSON.stringify(shaped.plans[0]);
   Object.assign(shapedRow.tax,{capital_loss_adjusted_taxable_income:-500,enhanced_senior_deduction:6000});
   const {element:shapedElement}=boot(JSON.stringify(shaped));
   assert.deepEqual(shapedElement('year-notices').children.map(li=>li.textContent).slice(-2),[

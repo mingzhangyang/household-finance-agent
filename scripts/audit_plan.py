@@ -318,6 +318,29 @@ def _tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,in
     return fed,payroll, fed['total_federal_income_and_niit']+payroll['total']
 
 
+def _bisect_funding(fund,low,high,year):
+    """Root of tax(guess) = guess between a guess whose tax is higher and one whose
+    tax is lower, for the cases fixed-point steps cannot settle."""
+    if high is None:
+        high=max(1.,2*low)
+        for _ in range(200):
+            if fund(high)[7]<high:break
+            high*=2
+        else:raise ModelError(f'{year}: tax funding has no bounded solution')
+    for _ in range(200):
+        middle=(low+high)/2
+        final=fund(middle)
+        if abs(final[7]-middle)<.00001:return final
+        if final[7]>middle:low=middle
+        else:high=middle
+        if high-low<=1e-12*max(1.,high):break
+    # Float spacing can stop short of the tolerance on a very steep response; the
+    # low side leaves no idle cash and at most a sub-cent unpaid amount.
+    final=fund(low)
+    if 0<=final[7]-low<.001:return final
+    raise ModelError(f'{year}: tax funding iteration failed to converge')
+
+
 def run_path(p, annual_portfolio_returns, verify=True):
     """End-of-year transactions; RMD uses PRIOR year-end account balance."""
     validate(p)
@@ -406,9 +429,8 @@ def run_path(p, annual_portfolio_returns, verify=True):
         # Iterative funding: tax depends on taxable dispositions and IRA withdrawals.
         # Each iteration restarts from the same pre-withdrawal balances/basis.
         pre_draw=bal.copy();pre_basis=basis.copy()
-        tax_guess=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,0.,0.)[2]
-        final=None
-        for attempt in range(150):
+        def fund(tax_guess):
+            """Draws that cover spending plus tax_guess, and the tax they cause."""
             working=pre_draw.copy();wbasis=pre_basis.copy()
             required=max(0.,living+tax_guess-working[cash_id])
             draws={};gain=0.;ira_extra=0.;blocks=[];sales={}
@@ -435,10 +457,22 @@ def run_path(p, annual_portfolio_returns, verify=True):
                     ira_extra+=draw
                 working[aid]-=draw;required-=draw;draws[aid]=draw
             fed,payroll,tax_new=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,ira_extra,gain)
-            final=(working,wbasis,draws,gain,ira_extra,fed,payroll,tax_new,blocks,sales)
+            return (working,wbasis,draws,gain,ira_extra,fed,payroll,tax_new,blocks,sales)
+        tax_guess=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,0.,0.)[2]
+        # tax(guess) - guess is continuous and decreasing in the guess (each drawn
+        # dollar adds well under a dollar of tax), so its root is unique. Fixed-point
+        # steps converge while tax rises with draws; a recognized loss can make tax
+        # fall faster than draws rise, and the steps then alternate. Every step
+        # narrows a bracket [low, high] around the root for the bisection fallback.
+        low,high=0.,None
+        for attempt in range(150):
+            final=fund(tax_guess)
+            tax_new=final[7]
             if abs(tax_new-tax_guess)<.00001:break
+            if tax_new>tax_guess:low=max(low,tax_guess)
+            else:high=tax_guess if high is None else min(high,tax_guess)
             tax_guess=tax_new
-        else:raise ModelError(f'{year}: tax funding iteration failed to converge')
+        else:final=_bisect_funding(fund,low,high,year)
         working,wbasis,draws,gain,ira_extra,fed,payroll,tax_due,blocks,sales=final
         carryover=fed['capital_loss_carryover_out']
         proceeds=sum(draws.values())

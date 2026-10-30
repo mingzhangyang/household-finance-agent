@@ -751,6 +751,10 @@ def _journal_checks(row,previous_basis,expect,inv):
             total=sum(record[key] for record in records.values())
             expect(reported[tax_key],total,f'{y}: {tax_key} totals taxable account records',.0051+1e-12*total)
         nonnegative(reported['capital_loss_carryover_in'],f'{y}: capital loss carryover in')
+        # Input validation forbids a carryover beside a legacy account, which never
+        # recognizes losses; a relabeled record must not let one reduce income.
+        if LEGACY_TAXABLE in treatments.values() and reported['capital_loss_carryover_in']!=0:
+            raise VerifyFailure(f'{y}: legacy no-loss-offset treatment cannot carry a capital loss')
     if all(t==LEGACY_TAXABLE for t in treatments.values()):
         nonnegative(row['realized_ltcg'],f'{y}: realized_ltcg without loss recognition')
     taken={}

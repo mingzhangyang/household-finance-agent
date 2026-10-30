@@ -701,7 +701,9 @@ def generated_plan(rng,n):
             m.update(annual_pension_2026_real=rng.uniform(1,40000),pension_start_age=rng.randint(55,75))
         members.append(m)
     value=rng.choice([0,rng.uniform(0,2e6)])
-    brokerage=dict(id='brokerage',kind='taxable',balance=value,basis=value*rng.uniform(0,1.5),
+    # Basis far above value makes each sold dollar a large deductible loss (funding fallback).
+    brokerage=dict(id='brokerage',kind='taxable',balance=value,
+                   basis=value*rng.choice([rng.uniform(0,1.5),rng.uniform(1.5,30)]),
                    gain_treatment='long_term_proportional_no_loss_offset')
     carryover={}
     if rng.random()<.5:
