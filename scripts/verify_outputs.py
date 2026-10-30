@@ -519,6 +519,10 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,cu
         # IRA amounts retain sub-cent precision across years; exported balances do not.
         unrounded_ira={a['id']:float(a['balance']) for a in plan['accounts']
                        if a['kind']=='traditional_ira'}
+        # Raw taxable values/basis are also needed: 0.00 exported value may
+        # still represent a positive sub-cent holding after a partial sale.
+        unrounded_taxable={a['id']:(float(a['balance']),float(a['basis']))
+                           for a in plan['accounts'] if a['kind']=='taxable'}
         previous_carry=float(plan.get('capital_loss_carryover_into_2027',0))
     else:
         previous_accounts=ledger[0]['opening_accounts']
@@ -696,6 +700,36 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,cu
                        f'{y}: {aid} unrounded IRA closing continuity',
                        .0051+1e-12*abs(ending))
                 unrounded_ira[aid]=ending
+            # Recompute sale fractions against *unrounded* plan-backed amounts.
+            # This preserves the full-liquidation check even when the output-only
+            # cent interval cannot distinguish zero from a partial remainder.
+            for aid,(opening,opening_basis) in unrounded_taxable.items():
+                record=inv['records'][aid] if inv['records'] is not None else None
+                if record is None:continue  # pre-1.2 output has no raw sale record
+                account=next(a for a in plan['accounts'] if a['id']==aid)
+                value=opening
+                value+=value*path_return
+                reinvested=0.
+                if account['gain_treatment']==WITH_DISTRIBUTIONS:
+                    rates=account['annual_distributions']
+                    reinvested=sum(opening*rates[key] for key in PLAN_YIELDS.values())
+                prior_basis=opening_basis+reinvested
+                sale=record['sale_proceeds']
+                if sale>value+1e-12*abs(value):
+                    raise VerifyFailure(f'{y}: {aid} sold more than unrounded taxable value')
+                sold_basis=sale*(prior_basis/value) if value>0 else 0.
+                ending_value=value-sale
+                ending_basis=max(0.,prior_basis-sold_basis)
+                expect(record['basis_sold'],sold_basis,
+                       f'{y}: {aid} unrounded proportional basis sold',
+                       1e-9+1e-12*abs(sold_basis))
+                expect(row['closing_accounts'][aid],ending_value,
+                       f'{y}: {aid} unrounded taxable closing continuity',
+                       .0051+1e-12*abs(ending_value))
+                expect(row['taxable_basis_end'][aid],ending_basis,
+                       f'{y}: {aid} unrounded taxable basis after sale',
+                       .0051+1e-12*abs(ending_basis))
+                unrounded_taxable[aid]=(ending_value,ending_basis)
         previous_accounts=row['closing_accounts']
         previous_total=row['closing_total']
         previous_basis=row['taxable_basis_end']
@@ -831,7 +865,9 @@ def _journal_checks(row,previous_basis,expect,inv):
         recognized=0.
         for aid,record in records.items():
             draw=accounts[aid]['optional_draw']
-            expect(record['sale_proceeds'],draw,f'{y}: {aid} sale proceeds are the draw',.0051+1e-12*draw)
+            # Both fields carry raw floats, not cents: a sub-cent discrepancy is real.
+            nonnegative(record['sale_proceeds'],f'{y}: {aid} sale proceeds')
+            expect(record['sale_proceeds'],draw,f'{y}: {aid} sale proceeds are the draw',0.)
             nonnegative(record['basis_sold'],f'{y}: {aid} basis sold')
             result=record['sale_proceeds']-record['basis_sold']
             expect(record['sale_gain_or_loss'],result,f'{y}: {aid} sale gain or loss',1e-6+1e-12*abs(record['basis_sold']))
@@ -867,15 +903,33 @@ def _proportional_basis_checks(row,previous_basis,reinvested,treatments,expect):
                    (.0101 if reinvested[aid] else .0051)+1e-12*abs(prior))
             continue
         if value<=.02:
-            # Cent-rounded balances cannot support a ratio check this small, but
-            # a sale that empties the account uses all of its basis.
+            # The displayed closing balance of 0.00 can hide up to half a cent.
+            # Constrain the proportional sale using the intersection of the
+            # opening+growth (two half-cent errors) and closing rounding bands.
             if basis[aid]>prior+.0051:
                 raise VerifyFailure(f'{y}: {aid} basis increased on a sale')
             sold=records[aid]['basis_sold'] if records is not None and aid in records else None
-            if row['closing_accounts'][aid]==0:
-                expect(basis[aid],0.,f'{y}: {aid} basis after selling the whole account',.0051)
-                if sold is not None:
-                    expect(sold,prior,f'{y}: {aid} basis sold with the whole account',.0051+1e-12*prior)
+            close_value=row['closing_accounts'][aid]
+            value_low=max(draw,value-.0100001,draw+max(0.,close_value-.0050001))
+            value_high=min(value+.0100001,draw+close_value+.0050001)
+            if value_high<value_low or value_high<=0:
+                raise VerifyFailure(f'{y}: {aid} sale and rounded balances cannot reconcile')
+            fraction_low=draw/value_high
+            fraction_high=min(1.,draw/value_low)
+            basis_low=max(0.,prior-.0050001)
+            basis_high=prior+.0050001
+            min_remaining=basis_low*(1-fraction_high)
+            max_remaining=basis_high*(1-fraction_low)
+            if not min_remaining-.0051<=basis[aid]<=max_remaining+.0051:
+                raise VerifyFailure(f'{y}: {aid} proportional basis outside rounded-value bounds')
+            if sold is not None:
+                sold_low=basis_low*fraction_low
+                sold_high=basis_high*fraction_high
+                basis_tol=1e-9+1e-12*abs(prior)
+                if not sold_low-basis_tol<=sold<=sold_high+basis_tol:
+                    raise VerifyFailure(f'{y}: {aid} basis sold outside rounded-value bounds')
+                expect(basis[aid]+sold,prior,
+                       f'{y}: {aid} basis conservation on a small sale',.0101+1e-12*abs(prior))
             if sold is not None and treatments[aid]==WITH_DISTRIBUTIONS:
                 # A recognized loss can be the whole basis; the sale record carries it.
                 gains+=draw-sold

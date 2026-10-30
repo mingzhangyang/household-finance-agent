@@ -437,7 +437,8 @@ def run_path(p, annual_portfolio_returns, verify=True):
             required=max(0.,living+tax_guess-working[cash_id])
             draws={};gain=0.;ira_extra=0.;blocks=[];sales={}
             for aid in p['withdrawal_order']:
-                if required<=1e-8:break
+                # Even a sub-cent sale can trigger material tax with steep cost basis.
+                if required<=0:break
                 kind=amap[aid]['kind']
                 if kind=='cash':continue
                 if kind in ('traditional_ira','traditional_401k','roth_ira'):
