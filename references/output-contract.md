@@ -1,4 +1,14 @@
-# Output contract 1.2
+# Output contract 1.3
+
+1.3 (2026-11-01, M2 group 2): every annual row adds `state_tax`, which is `null` when the
+plan keeps `state_income_tax: "excluded_with_disclosure"` and otherwise the Maryland record
+`S` below; `Y.tax_due_total` now includes `S.total_state_and_local_tax`. Maryland plans add
+three `rule_basis` families and Maryland entries to `source_ids`, `rules_sources` and
+`rule_scope`. `engine_source_sha256` also covers `state_tax.py` and `maryland_tax.py`.
+`evidence_status.contract_version` is `1.3`. Federal-only plans produce the same numbers as
+contract 1.2: on the example run with the federal-only scope, every field is equal except the
+added `state_tax: null`, the engine hash, the contract version and one `rule_scope` line. The
+verifier rejects contract 1.2 results that carry evidence status.
 
 1.2 (2026-10-29, M2 group 1): every annual row adds `taxable_accounts` (one record
 per taxable account) and `T` adds the Schedule D and investment-income fields below.
@@ -19,7 +29,7 @@ No calculated value changed.
 
 This catalog covers report numbers, JSON exports, CSV and trace output. `R` means
 one evaluate result; `L` = R.deterministic_annual_ledger; `Y` = L.rows[*]; `T` = Y.tax;
-`P` = Y.payroll_tax; `A` = any account ID. The report embeds four exact plans/results
+`P` = Y.payroll_tax; `S` = Y.state_tax (Maryland plans); `M` = a member ID; `A` = any account ID. The report embeds four exact plans/results
 and output-verifier reports. The export contract is `{plan,result,verification}`.
 An exported plan is a schema 2.0 input. A bare result is the verifier CLI input.
 
@@ -57,7 +67,7 @@ The M1 verification matrix further records gaps and mutation evidence.
 | Fields | Unit / derivation | Validation or explicit limit |
 |---|---|---|
 | R.engine_version, policy, scenario, opening_balance_status, tax_policy, year_range | Version / input copy; start = as_of_year+1 | Policy/range checks; input hash; no proof that a policy is appropriate |
-| R.input_sha256, engine_source_sha256 | SHA256 canonical sorted compact UTF-8 input / concatenated audit_plan, tax2026, tax_extensions bytes | Recomputed with supplied plan / source directory; no signature |
+| R.input_sha256, engine_source_sha256 | SHA256 canonical sorted compact UTF-8 input / concatenated audit_plan, tax2026, tax_extensions, state_tax, maryland_tax bytes | Recomputed with supplied plan / source directory; no signature |
 | R.input_provenance, evidence_status | Supplied register plus fixed research-status metadata (contract 1.1) | Structural input validation and exact status values; original documents and professional review not verified |
 | R.rules_sources, rule_scope | Source links and model limitations | Version-controlled disclosures, not live external-source verification |
 | R.success_paths, trials | Count of funded paths / input trial count | Manifest count and boolean aggregation |
@@ -92,9 +102,22 @@ The M1 verification matrix further records gaps and mutation evidence.
 | T.ordinary_tax,capital_gains_tax,federal_income_tax,income_tax_method | USD; chosen lesser ordinary-rate-cap / preferred method | Both methods recomputed; reported method must be the lower (one-cent tie tolerance); not all tax law verified |
 | T.niit_magi_assumed_equal_agi,niit_net_investment_income,niit_threshold,niit_tax_base,niit_rate,niit_due,total_federal_income_and_niit | USD except decimal rate; NII = max(0, cash interest + account interest + all ordinary dividends + Form 1040 line 7a) (Form 8960 lines 1, 2, 5a, 12) | Independently recomputed NIIT from modeled components; no Form 8960 Part II deductions or other adjustments |
 | T.tax_law_year,year,rule_multiplier,policy,unmodeled | Published year of the income-tax tables used; row year; index from that year (1 when published); per-year disclosure naming the published year and, for a projection, `NOT published <year> law` | Law year, multiplier and exact disclosure recomputed from the retyped register and plan rate; `unmodeled` by replay; not future legislation |
-| Y.rule_basis[F].status,base_year,multiplier,source_id for F = income_tax_tables, oasdi_wage_base, elective_deferral_limit | `published` (own year, multiplier 1) or `projected` (latest published year × (1+assumed rate)^(year−base_year)); 8-decimal multiplier; register source ID | Recomputed from the verifier's retyped register: a projected year labeled published, or a changed base year, source or index, is rejected; required in contract 1.1 results and traces; shown in the year audit |
+| Y.rule_basis[F].status,base_year,multiplier,source_id for F = income_tax_tables, oasdi_wage_base, elective_deferral_limit (Maryland plans add md_standard_deduction, md_pension_exclusion_limit, md_local_income_tax_rates; county rates carry forward with multiplier 1) | `published` (own year, multiplier 1) or `projected` (latest published year × (1+assumed rate)^(year−base_year)); 8-decimal multiplier; register source ID | Recomputed from the verifier's retyped register: a projected year labeled published, or a changed base year, source or index, is rejected; required in contract 1.1 results and traces; shown in the year audit |
 | P.wage_base_per_person,oasdhi_taxable_wages_by_person,additional_medicare_taxable_wages,social_security_tax,medicare_tax,additional_medicare_tax,total | USD nominal, employee FICA only | Published caps (2026, 2027) and later caps projected from the latest published cap per `rule_basis`, rates and Additional Medicare threshold recomputed; covered wages = min(gross wages, base) for a single filer, at least that for joint filers; with plan, per-person covered wages |
-| Y.tax_due_total,tax_paid,unpaid_tax | USD nominal, federal+NIIT+FICA and cash settlement | Components checked; paid+unpaid = due within one cent |
+| Y.tax_due_total,tax_paid,unpaid_tax | USD nominal, federal+NIIT+FICA (+ S.total_state_and_local_tax for Maryland) and cash settlement | Components checked (one and a half cents with three components); paid+unpaid = due within one cent; the total is also recomputed in one pass from the federal and Maryland bases |
+| Y.state_tax | `null` for the federal-only scope; the Maryland record for a Maryland plan | Presence must follow the output tax policy; with plan, the policy must equal the plan's |
+| S.jurisdiction,residency,local_jurisdiction,local_rate_structure | `US-MD`; `full_year_resident`; the plan's county or `baltimore_city`; `flat`, `graduated_brackets` (Anne Arundel) or `income_band_rate` (Frederick) | Exact equality with the policy and the retyped 2026 county table |
+| S.federal_adjusted_gross_income,additions,social_security_subtraction | Form 502 lines 1, 6 (always 0: no additions modeled), 11 | Equal to T.adjusted_gross_income and T.taxable_social_security (same cent value); additions exactly 0 |
+| S.pension_exclusion_limit | Comptroller limit for the year: published $40,600 for 2026, later years × (1+assumed rate)^(year−2026) | Recomputed from the retyped register and `rule_basis` |
+| S.members[M].age,qualifying_pension_income,social_security_benefits,pension_exclusion,modified_maryland_agi | Whole age on December 31; employee-retirement-system pension plus own 401(k) RMDs and draws; all Social Security received; Worksheet 13A min(qualifying, limit − Social Security) at 65+; Worksheet 13D share (joint only, else `null`) | Exclusion recomputed; benefits total the row; joint shares total FAGI − line 11 − line 10a. With plan: ages, benefits, qualifying income from the plan's pension types and the 401(k) journals, and each share from wages, pension, own IRA/401(k) journals and half the jointly held income |
+| S.pension_exclusion,two_income_subtraction,subtractions,maryland_adjusted_gross_income | Line 10a total; line 14 = min($1,200, max(0, lower share)) for joint filers, else 0; line 15 = 10a + 11 + 14; line 16 = line 1 − line 15 | Recomputed |
+| S.standard_deduction,exemption_per_person,age_65_exemptions,exemptions,taxable_net_income | Standard deduction (2025 published, projected later); $3,200 limited by the cent-rounded FAGI; $1,000 per person 65+; line 19; line 20 = max(0, line 16 − 17 − 19) | Recomputed from the retyped register; threshold choices from the reported FAGI exactly |
+| S.state_bracket_lines[*].from,to,rate,taxable,tax; S.state_tax_before_surtax | Marginal TG §10-105 schedule on line 20; line 21 | Every line's start, top, rate, amount and product recomputed; sum checked |
+| S.capital_gain_in_maryland_agi,capital_gain_surtax_base,capital_gain_surtax | Line 1c (= T.capital_gain_or_loss_in_agi); 502CG line 9 = max(0, line 1c) when FAGI > $350,000, else 0; line 21b = 2% | Recomputed |
+| S.state_tax_before_credits,senior_tax_credit,state_tax_after_credits | Lines 21 + 21b; TG §10-754 credit limited to that tax; line 27 | Credit recomputed from ages and FAGI (revenue trigger assumed off) |
+| S.local_tax_lines[*].from,to,rate,taxable,tax; S.local_tax | County tax on line 20 (flat, Anne Arundel marginal, Frederick one rate chosen by the cent-rounded income's band); line 28 | Lines recomputed from the retyped 2026 table; sum checked |
+| S.total_state_and_local_tax | Line 27 + line 28 (no local credits) | Sum checked; feeds Y.tax_due_total |
+| S.funding_cliff_excess_cash | 0, or the cash left when funding stops just past a Maryland threshold that a loss sale crosses | Must equal the closing cash after a funded draw with no shortfall; accepted only if the row has a recognized sale loss and one more cent of FAGI raises the verifier's own recomputed Maryland tax by at least the excess |
 | Y.closing_total,closing_accounts[A],closing_total_real | USD nominal; real = nominal / inflation factor | Conservation, account sums, nonnegative balances, deflation; account-count-dependent rounding tolerance |
 | Y.reconciliation_residual,account_reconciliation_residuals[A] | USD, closing minus reconstructed closing | $0.01 residual gate; exported rounded-account reconstruction generally $0.05 |
 | Y.account_flows[A].contribution,required_distribution,roth_conversion_out,roth_conversion_in,optional_draw,cash_external_inflow,cash_tax_and_spending_outflow,cash_received_rmd,cash_received_draws | USD nominal positive flow magnitudes | Exact field set, nonnegative, per-account conservation; linked to row deferrals, draws, RMD records and cash totals; cash-only receipts/payments only on cash |
@@ -122,6 +145,12 @@ The M1 verification matrix further records gaps and mutation evidence.
   verbatim; a null adjusted taxable income reads “本年无净资本损失”. The report
   rejects missing, unknown-treatment or non-numeric records, and records whose IDs or
   treatments differ from the embedded plan's taxable accounts (an empty object included).
+- Year audit Maryland block: every `S` field verbatim (the federal-only scope shows one
+  line saying no state tax was calculated); the tax breakdown adds the Maryland total. A
+  record that is missing, malformed, or differs from the embedded plan's jurisdiction,
+  county or members hides conclusions and exports. A cent-visible
+  `funding_cliff_excess_cash` adds a year notice; county rates carried forward read as
+  “沿用 … 年已公布税率”, not as an index.
 - Year audit rule basis: one line per `rule_basis` family. A projection names its
   published base year, its 8-decimal multiplier and says it is not a published value
   for that year. Labels must match the report's retyped list of published years and

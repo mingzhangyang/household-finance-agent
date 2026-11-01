@@ -6,9 +6,11 @@ federal plus Maryland (other states kept pluggable); taxable brokerage accounts
 supported; Social Security rebuilt from the earnings record; delivered as an agent
 Skill run in Codex or Claude Code. A professional reviewer has been named; their
 details and issue list are not yet recorded. **These are launch targets, not current
-capability.** Until the M2/M3 work ships and passes verification, the table below is
-what the code enforces: a USD, federal-only research tool. No state is certified as
-supported; excluding state tax does not imply a household owes none. No complete
+capability.** The table below is what the code enforces: a USD research tool with
+federal tax and, when the plan selects it, the Maryland Form 502 subset (M2 group 2,
+2026-11-01). Maryland is implemented, not certified; every other state is rejected, and
+the federal-only scope (`excluded_with_disclosure`) does not imply a household owes no
+state tax. No complete
 retirement feasibility, tax-return, transaction or optimal-strategy conclusion is
 permitted.
 
@@ -25,7 +27,8 @@ not proof of real-world applicability.
 | Ages | Limited: birth years 1951–2006 (20–75 at 2026 year-end); horizon age ≤120; whole-year ages | birth / horizon validation |
 | Calendar | Limited: opening balances at 2026-12-31; projection 2027 through end year ≤2110 | as_of_year, end_year, opening_balance_status |
 | Rules | Limited: published values by tax year (income tax tables 2026, OASDI wage base 2026–2027, elective limit 2026); later years projected from the latest published year at an assumed rate and labeled per row | tax_policy; rule_basis; rules-provenance.md |
-| State/local/non-US tax | Excluded from research, no supported-state claim | explicit excluded_with_disclosure; unknown jurisdiction rejected |
+| State/local tax (M2 group 2) | Limited: Maryland full-year residents (single or joint, one county or Baltimore City) via `{"jurisdiction":"US-MD","residency":"full_year_resident","local_jurisdiction":…,"pension_plan_types":{…}}`: FAGI less taxable Social Security, the pension exclusion (65+, employee-retirement-system pensions and 401(k) distributions, not IRAs; each pension's plan type required), the two-income subtraction (joint income split evenly), standard deduction, FAGI-limited exemptions, marginal rates, 2% surtax on line 7a gain above $350,000 FAGI, senior tax credit (revenue trigger assumed off), county tax (Anne Arundel graduated, Frederick income band). No additions, itemizing, dependents, disability/blindness, military/public-safety subtractions, U.S. obligation interest subtraction, other credits, local credits, part-year residence or split counties. Or `excluded_with_disclosure` (federal-only research) | `state_tax.validate`: unregistered jurisdictions, part-year residence, missing/unknown county and missing pension types rejected; test_maryland_tax.py; three M1 Maryland cases |
+| Non-US tax | Rejected | USD and US jurisdictions only |
 | Accounts | Exactly one cash, at most one taxable, owned traditional IRA / 401(k) / Roth IRA | kind, owner and withdrawal-order checks |
 | Traditional accounts | Limited: entirely pretax, uniform RMD table, no still-working exception | affirmative confirmations; no inherited accounts or Form 8606 basis |
 | Roth | Limited: user affirmatively assumes qualified distributions; no qualification calculation | qualified_distributions_confirmed |
@@ -82,7 +85,7 @@ what must be built; none changes the executable boundaries above until shipped.
 | Audience | Professional-assisted use | Outputs stay `restricted_research` until gates pass; M5 adds issue log, rollback and reviewer trail |
 | Household, income, accounts (2a, 2d, 2e) | Unchanged baseline | Single/MFJ, birth 1951–2006, constant status; no self-employment, rental, inherited accounts, Form 8606 basis, match or catch-up |
 | Taxable brokerage (2c) | Supported | M2 group 1 implemented 2026-10-29 (row above); professional review of the carryover add-back pending |
-| State tax (2b) | Maryland, with a jurisdiction interface for other states | M2 group 2: full-year residents, county/Baltimore City local tax required; unregistered states keep failing closed |
+| State tax (2b) | Maryland, with a jurisdiction interface for other states | M2 group 2 implemented 2026-11-01 (row above); professional review of the Form 8960 line 9b reading, the jointly held income split and the Frederick band reading pending |
 | Social Security (3) | Rebuilt from the earnings record | M3: indexing, AIME, PIA, COLA, claiming adjustments, spouse/survivor; SSA statement estimates become an independent cross-check |
 | Delivery (5) | Agent Skill in Codex or Claude Code | Scripts run locally or in the host session; data the agent reads goes to the model provider; M5 covers that flow and a run in both hosts |
 

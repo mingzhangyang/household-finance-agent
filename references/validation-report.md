@@ -2,6 +2,36 @@
 
 This is a repeatable QA record, not an independent CPA/CFP attestation. Execute the entire test suite and save the generated result and verifier JSON before claiming any count of passing tests. Output in `model_validation_report.md` outside the skill contains the latest complete fixture-specific numbers.
 
+## M2 group 2: state tax interface and Maryland (2026-11-01)
+
+Local results on branch `claude/serene-pascal-ehyo6g`; not a GitHub Actions run or professional
+review. Details in the [handover](handover-2026-11-01-maryland.md).
+
+- `sh scripts/verify_local.sh`: **267 tests** passed; the 40-year / 300-path example (now a
+  Montgomery County household) receives **9,444 verifier assertions**; exact replay passed;
+  traced path 17 passed (9,524 assertions).
+- `python scripts/verify_m1_cases.py`: **9 cases / 18 years / 1,140 comparisons** passed. The three
+  Maryland cases (148, 105 and 69 comparisons) matched their Decimal equations on the first run.
+- Known answers (`tests/golden/maryland-printed-cases.json`, engine and verifier copies): 15 printed
+  Schedule I/II base amounts and one point above the top bracket, 10 state tax-table rows and 5 Anne Arundel tax-table rows (each the
+  schedule at the row midpoint, rounded), the four Worksheet 19D base amounts, Frederick band edges,
+  exemption chart 10A edges, the senior credit (code m) and Worksheet 13A cases.
+- Funding threshold: a loss sale that lowers FAGI to $100,000 restores the single filer's exemption
+  and senior credit; the engine sells exactly $1,000 and keeps $973.72 in cash, and the verifier's
+  one-cent jump check accepts it. Without the new branch the same plan failed to converge.
+- Federal-only plans: the example in federal-only mode, the six earlier M1 cases and 145 generated
+  plans give field-for-field identical results and traces on `d8f11b8` and the new engine (apart
+  from `state_tax: null`, the engine hash, the contract version and one `rule_scope` line); five
+  generated plans are rejected by both with the same message. 900 further generated plans (half
+  Maryland) met no funding failure; every rejection was a pre-existing input rule.
+- Seeded sweeps (`HFA_VERIFIER_FUZZ_PLANS=500`; half the plans Maryland in a random county with random
+  pension plan types): seed 7: 493 valid results, 1,972 traced paths, 21,955 single-field mutations
+  rejected; seed 8: 486 / 1,944 / 22,273; seed 9: 482 / 1,928 / 21,833. In total 1,461 valid results,
+  5,844 traced paths and 66,061 single-field mutations, every one rejected. An earlier 400-plan run (seed 7) also passed.
+- Real Chromium (Playwright 1.56.1, Chromium 153.0.8010.12, Noto Sans CJK SC): **52 checks passed**,
+  including the Maryland block for every year of every scenario at both viewports and four
+  state-record error states.
+
 ## PR #12 second review round (2026-10-30)
 
 - The bisection stopped at a relative bracket width of 1e-12 and aborted a supported plan

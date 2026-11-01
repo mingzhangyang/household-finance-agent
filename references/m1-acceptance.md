@@ -7,8 +7,9 @@ Exact source revision and run results belong to the PR and CI artifact manifest.
 
 ## Independent inputs, method and acceptance rules
 
-`tests/golden/m1-cases.json` contains six complete **fictional** plans (cases 5 and 6
-added 2026-10-29 for the taxable account, M2 group 1). No real
+`tests/golden/m1-cases.json` contains nine complete **fictional** plans (cases 5 and 6
+added 2026-10-29 for the taxable account, M2 group 1; cases 7–9 added 2026-11-01 for
+Maryland, M2 group 2). No real
 household documents are needed. `tests/golden/m1_reference.py` derives the answers
 with 40-digit Decimal, case-specific algebra and explicit segment/range assertions.
 It imports only Python's decimal module. It does not import production tax tables,
@@ -24,7 +25,9 @@ Projection years 2027–2030 use **hypothetical 2026 federal rates/deductions**,
 frozen in cases 1–3 and indexed 2% a year in case 4, including the modeled
 expiration of the enhanced senior deduction after 2028. They do not assert enacted 2027–2030 tax tables. Events use whole-year
 ages; RMD is taken in the modeled year, before conversion, with no first-year deferral.
-No state tax, death, spousal entitlement calculation or market-risk inference is added.
+Cases 1–6 select the federal-only scope; cases 7–9 select Maryland with frozen rules (rate 0:
+the 2025 Maryland standard deduction and the 2026 pension exclusion limit). No death,
+spousal entitlement calculation or market-risk inference is added.
 
 Predeclared tolerances: absolute USD 0.01 for monetary comparisons; year, RMD divisor,
 funded status, first failure year and the zero-return funded fraction must match
@@ -184,6 +187,37 @@ MAGI excess, so NIIT = 646. FICA uses the published 2027 cap 192,300, 1.45% and 
 above 200,000: 17,172.60. The sale equals the tax, 88,902.85; its loss .24 × 88,902.85
 exceeds 3,000, and 18,336.684 carries over. Form 8960 lines 1, 2, 5a and 12 are the source
 of the NII composition.
+
+## Cases 7–9: Maryland (added 2026-11-01)
+
+Sources: the [Maryland primary-source review](primary-source-review-2026-11-01-maryland.md)
+(TG §§10-105, 10-106, 10-207, 10-209, 10-211, 10-217, 10-754; 2025 resident booklet;
+Comptroller 2026 pension limit and county rates). Zero returns, inflation and assumed rate.
+
+**Case 7, retirees with the pension exclusion and senior credit (Montgomery, 2027–2028).**
+MFJ, both born 1957. a: employee-retirement-system pension 60,000 and Social Security
+24,000; b: Social Security 12,000 and a 401(k) that funds 110,000 of spending from empty
+cash. Federal: taxable SS is the cap 30,600; deductions 47,500; taxable 43,100 + D in the
+12% bracket, T = 4,676 + .12D. Maryland does not depend on D while D ≤ 28,600: exclusions
+16,600 (a: 40,600 − 24,000) and D (b, 401(k) draws); shares 43,400 and 0, so no two-income
+subtraction; Maryland AGI 43,400; exemptions 2 × 3,200 + 2 × 1,000; taxable 28,300; state
+tax 1,291.75 fully offset by the 1,750 senior credit; county 3.2% = 905.60. Hence
+.88D = 19,581.60, D = 22,251.818…; range checks keep D below 28,600, the federal bracket and
+the 150,000 FAGI limits.
+
+**Case 8, capital gain surtax (Anne Arundel, 2027).** Single, 50, wages 400,000; a 500,000
+account pays 10,000 qualified dividends, 5,000 interest and 20,000 capital gain
+distributions, reinvested. Federal AGI 435,000; ordinary tax 104,884.25; 15% on 30,000;
+NIIT 1,330; FICA 19,522.60. Maryland taxable 431,650 (no exemption above 150,000 FAGI):
+12,760 + .0575 × 181,650 = 23,204.875; FAGI exceeds 350,000, so 2% of the 20,000 line 7a
+gain = 400 (qualified dividends are not line 7a); Anne Arundel 11,640 + .032 × 31,650 =
+12,652.80, each of the three graduated lines compared.
+
+**Case 9, two earners in Frederick (2027).** MFJ, wages 90,000 (10,000 pretax 401(k)) and
+40,000. Federal tax 10,040; FICA 9,945. Maryland shares 80,000 and 40,000, so the full
+1,200 two-income subtraction; Maryland AGI 118,800; exemptions 6,400; taxable 105,700:
+90 + .0475 × 102,700 = 4,968.25. Frederick applies 2.96% to **all** taxable net income
+between 100,001 and 250,000 (joint): 3,128.72.
 
 ## Browser and evidence reproduction
 

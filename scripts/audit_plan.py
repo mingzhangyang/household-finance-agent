@@ -518,11 +518,13 @@ def run_path(p, annual_portfolio_returns, verify=True):
             return (working,wbasis,draws,gain,ira_extra,fed,payroll,tax_new,blocks,sales,state)
         tax_guess=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,
                             converted,0.,0.,persons=persons,retirement=retirement)[2]
-        # tax(guess) - guess is continuous and decreasing in the guess (each drawn
-        # dollar adds well under a dollar of tax), so its root is unique. Fixed-point
+        # Federal tax(guess) - guess is continuous and decreasing in the guess (each
+        # drawn dollar adds well under a dollar of tax), so its root is unique. Fixed-point
         # steps converge while tax rises with draws; a recognized loss can make tax
         # fall faster than draws rise, and the steps then alternate. Every step
         # narrows a bracket [low, high] around the root for the bisection fallback.
+        # Maryland thresholds add jumps: upward jumps keep a root, but a loss that
+        # lowers FAGI across one can skip it, and _bisect_funding then stops just past.
         low,high=0.,None
         cliff=False
         for attempt in range(150):

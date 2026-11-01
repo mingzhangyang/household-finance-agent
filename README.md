@@ -70,8 +70,21 @@ is deductible up to $3,000 and the rest carries over under IRC 1212(b), which ad
 the preferential rates, and NIIT includes interest, dividends and the allowed loss. Rules were
 read from the [primary documents](references/primary-source-review-2026-10-29-taxable-account.md);
 the verifier recomputes every step and two new independent Decimal cases match. Plans that keep
-the legacy label produce unchanged numbers. Maryland state tax (M2 group 2) is next. See the
+the legacy label produce unchanged numbers. See the
 [handover notes](references/handover-2026-10-29-taxable-account.md). Earlier handover: [rule years](references/handover-2026-10-29-rule-years.md).
+
+M2 group 2 (state tax) ships under output contract 1.3. `tax_policy.state_income_tax` is either
+`"excluded_with_disclosure"` (federal-only research) or a registered jurisdiction; only Maryland
+is registered, and every other state, part-year residence or missing county is rejected rather
+than taxed at zero. The Maryland subset covers full-year residents filing single or jointly in one
+county or Baltimore City: FAGI less taxable Social Security, the pension exclusion (65+, employer
+plan pensions and 401(k) distributions, not IRAs; each pension's plan type must be declared), the
+two-income subtraction, standard deduction, FAGI-limited exemptions, marginal state rates, the 2%
+surtax on line 7a gain above $350,000 FAGI, the senior tax credit and the county tax (Anne Arundel
+graduated, Frederick one rate by income band). Rows carry a `state_tax` record that the verifier
+recomputes line by line, and the report shows it. The example is now a Montgomery County household;
+federal-only plans produce unchanged numbers. Rules: [Maryland primary-source review](references/primary-source-review-2026-11-01-maryland.md);
+open review items and reproduction: [handover](references/handover-2026-11-01-maryland.md).
 
 ## Installing the Skill
 
@@ -96,6 +109,8 @@ Run `sh scripts/verify_local.sh` from the repo. It checks syntax, all tracked Py
 ## Quick start
 
 ```bash
+# Fictional Montgomery County, Maryland household; set tax_policy.state_income_tax to
+# "excluded_with_disclosure" for the federal-only research scope.
 python scripts/audit_plan.py validate examples/audited-household-2026.json
 python scripts/audit_plan.py run examples/audited-household-2026.json --output result.json
 python scripts/verify_outputs.py result.json --plan examples/audited-household-2026.json --engine-dir scripts --output verification.json
@@ -121,7 +136,7 @@ Each scenario's exact plan (including seed and return assumptions) is embedded i
 
 ## Limits and status
 
-**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules is implemented. No state income tax, NIIT on passive income, Form 8960 deductions or foreign exclusion, tax lots or wash sales, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Each year uses published federal values where they exist (2026 income-tax tables; 2026 and 2027 OASDI wage bases; 2026 elective limit); other years **project the latest published values at a hypothetical rate** and every row labels them `projected` in `rule_basis`. Projections are not enacted future tax law. Some yearly timing conventions use year-end approximations.
+**Not approved or suitable by itself for making real retirement, tax or investment transactions.** Only a restricted subset of US federal personal finance rules and, when selected, the Maryland resident income tax is implemented. No other state income tax, no Maryland additions, itemizing or credits other than the senior credit, no NIIT on passive income, Form 8960 deductions or foreign exclusion, tax lots or wash sales, credits, Social Security benefit formula, survivor benefits, inherited retirement accounts, QCD, Roth qualification checking, IRMAA, ACA, real-world return calibration, mortality model, mortgage/debt schedules or robust tax-lot engine. Each year uses published federal values where they exist (2026 income-tax tables; 2026 and 2027 OASDI wage bases; 2026 elective limit); other years **project the latest published values at a hypothetical rate** and every row labels them `projected` in `rule_basis`. Projections are not enacted future tax law. Some yearly timing conventions use year-end approximations.
 
 The legacy v1 engine and its browser suite are not present in this checkout. The v2.2 commands above refer to the actual checked-in engine.
 
