@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import audit_plan
+import maryland_tax
 from verify_outputs import plan_sha256,verify,verify_trace,VerifyFailure
 
 EXAMPLE=json.loads((ROOT/'examples/audited-household-2026.json').read_text())
@@ -24,8 +25,10 @@ EXAMPLE=json.loads((ROOT/'examples/audited-household-2026.json').read_text())
 
 def household(*,birth=1960,wages=0,ss=0,claim=67,cash=0,brokerage=0,basis=None,ira=0,
               roth=0,living=0,conversions=(),years=1,cash_yield=0,order=None):
-    """One single filer, frozen 2026 rules, zero portfolio returns unless overridden."""
+    """One single filer, frozen 2026 rules, zero portfolio returns unless overridden.
+    Federal-only research scope: the forgeries below target federal identities."""
     p=copy.deepcopy(EXAMPLE)
+    p['tax_policy']['state_income_tax']='excluded_with_disclosure'
     p.update(name='Fictional independent-verification case',end_year=2026+years,events=[],
              living_expenses_annual_real=living,terminal_target_2026_real=0)
     p['members']=[dict(id='a',birth_year=birth,retirement_age=90 if wages else 40,
@@ -737,6 +740,14 @@ def generated_plan(rng,n):
              withdrawal_order=['cash']+order,roth_conversions=conversions,events=[],
              living_expenses_annual_real=rng.uniform(0,3e5),terminal_target_2026_real=rng.choice([0,1e5]))
     p['tax_policy'].update(filing_status='mfj' if two else 'single',future_bracket_inflation=rng.uniform(0,.05))
+    # Half federal-only research, half Maryland in a random county.
+    if rng.random()<.5:
+        p['tax_policy']['state_income_tax']='excluded_with_disclosure'
+    else:
+        p['tax_policy']['state_income_tax']=dict(jurisdiction='US-MD',residency='full_year_resident',
+            local_jurisdiction=rng.choice(maryland_tax.LOCAL_JURISDICTIONS),
+            pension_plan_types={m['id']:rng.choice([maryland_tax.ERS,maryland_tax.NOT_ERS])
+                                for m in members if m.get('annual_pension_2026_real',0)>0})
     p['assumptions'].update(inflation=rng.uniform(0,.06),equity_weight=rng.random(),
         equity_mean=rng.uniform(-.5,.3),equity_volatility=rng.uniform(0,.7),bond_mean=rng.uniform(-.5,.3),
         bond_volatility=rng.uniform(0,.5),equity_bond_correlation=rng.uniform(-1,1),

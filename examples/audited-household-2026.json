@@ -87,7 +87,12 @@
     "jurisdiction": "US_federal",
     "reference_year": 2026,
     "filing_status": "mfj",
-    "state_income_tax": "excluded_with_disclosure",
+    "state_income_tax": {
+      "jurisdiction": "US-MD",
+      "residency": "full_year_resident",
+      "local_jurisdiction": "montgomery_county",
+      "pension_plan_types": {}
+    },
     "future_bracket_inflation": 0.025
   },
   "living_expenses_annual_real": 130000,

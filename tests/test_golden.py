@@ -20,7 +20,8 @@ def projection_plan(case):
     p['members'] = [dict(id='adult', birth_year=case['birth_year'], retirement_age=40,
         annual_wages_2026=0, wage_growth=0, ss_claim_age=67,
         ss_annual_2026_real_at_chosen_claim_age=0, ss_estimate_basis='2026_real_at_selected_claim_age')]
-    p['tax_policy'].update(filing_status='single', future_bracket_inflation=0)
+    p['tax_policy'].update(filing_status='single', future_bracket_inflation=0,
+                           state_income_tax='excluded_with_disclosure')
     p['accounts'] = [dict(id='cash', kind='cash', balance=case['cash']),
         dict(id='taxable', kind='taxable', balance=case['taxable'], basis=case['basis'],
              gain_treatment='long_term_proportional_no_loss_offset'),

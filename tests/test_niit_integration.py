@@ -18,6 +18,8 @@ def fixture():
         'ss_estimate_basis':'2026_real_at_selected_claim_age',
         'annual_pretax_401k_2026_real':20000,'pretax_401k_target':'retirement'}]
     p['tax_policy']['filing_status']='single'
+    # Federal-only research scope: callers hand-compute federal amounts.
+    p['tax_policy']['state_income_tax']='excluded_with_disclosure'
     p['tax_policy']['future_bracket_inflation']=0
     p['accounts']=[{'id':'cash','kind':'cash','balance':200000},
       {'id':'brokerage','kind':'taxable','balance':0,'basis':0,

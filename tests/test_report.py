@@ -100,7 +100,7 @@ class ReportRoundTrip(unittest.TestCase):
                          'invalid-plan-json','mismatched-plan-json','invalid-notice',
                          'duplicate-notice-year','notice-year-outside-ledger',
                          'invalid-skipped-conversion','invalid-rmd-record','rule-basis-mutations',
-                         'taxable-records'):
+                         'taxable-records','state-records'):
                 with self.subTest(mode=mode):
                     check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report),mode],
                                          capture_output=True,text=True)
@@ -157,14 +157,21 @@ class ReportRoundTrip(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('node'),'Node.js required for report handler regression')
     def test_report_status_and_download_handlers(self):
-        plan=fixture()
-        plan['roth_conversions']=[dict(year=2027,amount_nominal=1000000,
-                                      **{'from':'ira_a','to':'roth_a'})]
-        with tempfile.TemporaryDirectory() as tmp:
-            report=render(plan,Path(tmp)/'report.html')
-            check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report)],
-                                 capture_output=True,text=True)
-            self.assertEqual(check.returncode,0,check.stdout+check.stderr)
+        # The Maryland example and the federal-only research scope both render.
+        for state in ('maryland','excluded_with_disclosure'):
+            plan=fixture()
+            if state!='maryland':
+                plan['tax_policy']['state_income_tax']=state
+            plan['roth_conversions']=[dict(year=2027,amount_nominal=1000000,
+                                          **{'from':'ira_a','to':'roth_a'})]
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as tmp:
+                report=render(plan,Path(tmp)/'report.html')
+                parser=ReportData();parser.feed(report.read_text())
+                rows=json.loads(parser.raw)['results'][0]['deterministic_annual_ledger']['rows']
+                self.assertEqual(rows[0]['state_tax'] is None,state!='maryland')
+                check=subprocess.run(['node',str(ROOT/'tests/report_ui.cjs'),str(report)],
+                                     capture_output=True,text=True)
+                self.assertEqual(check.returncode,0,check.stdout+check.stderr)
 
 
 if __name__=='__main__': unittest.main()

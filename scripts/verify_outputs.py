@@ -17,6 +17,8 @@ from math import isfinite, sqrt
 from pathlib import Path
 
 ENGINE_VERSION='2.2-auditable-restricted'
+# Engine sources fingerprinted by engine_source_sha256 (read as bytes, never imported).
+ENGINE_FILES=('audit_plan.py','tax2026.py','tax_extensions.py','state_tax.py','maryland_tax.py')
 # Published tax-year values retyped from references/rules-provenance.md
 # (primary documents read 2026-10-29), deliberately not imported from tax2026.py.
 # A year without published values indexes the latest published year at the
@@ -76,6 +78,54 @@ INVESTMENT_TAX_FIELDS=('taxable_account_interest','nonqualified_dividends','qual
 # IRC 1211(b), retyped from the register: net capital loss deductible against
 # other income each year; not indexed. Married filing separately is out of scope.
 CAPITAL_LOSS_LIMIT=3000.
+# Maryland (contract 1.3), retyped from the Maryland section of
+# references/rules-provenance.md (primary documents read 2026-11-01), not
+# imported from maryland_tax.py. Full-year residents, single or joint.
+STATE_EXCLUDED='excluded_with_disclosure'
+MD='US-MD'
+MD_RESIDENCY='full_year_resident'
+MD_ERS='employee_retirement_system'
+# TG 10-105(a): marginal state brackets (top, rate); None = no top.
+MD_BRACKETS={'single':((1000.,.02),(2000.,.03),(3000.,.04),(100000.,.0475),(125000.,.05),(150000.,.0525),
+                       (250000.,.055),(500000.,.0575),(1000000.,.0625),(None,.065)),
+             'mfj':((1000.,.02),(2000.,.03),(3000.,.04),(150000.,.0475),(175000.,.05),(225000.,.0525),
+                    (300000.,.055),(600000.,.0575),(1200000.,.0625),(None,.065))}
+MD_SURTAX_RATE=.02
+MD_SURTAX_FAGI=350000.
+MD_AGE_EXEMPTION=1000.
+# TG 10-211(c): each $3,200 exemption by FAGI (not over the limit -> amount); above all limits $0.
+MD_EXEMPTION_LIMITS={'single':((100000.,3200.),(125000.,1600.),(150000.,800.)),
+                     'mfj':((150000.,3200.),(175000.,1600.),(200000.,800.))}
+MD_TWO_INCOME_LIMIT=1200.
+# TG 10-754(b): FAGI limit, then the credit for one or two taxpayers 65 or older.
+MD_SENIOR_CREDIT={'single':(100000.,{1:1000.}),'mfj':(150000.,{1:1000.,2:1750.})}
+MD_STANDARD={2025:{'single':3350.,'mfj':6700.}}
+MD_PENSION_LIMIT={2026:40600.}
+_MD_FLAT={'allegany_county':.032,'baltimore_city':.032,'baltimore_county':.032,'calvert_county':.032,
+          'caroline_county':.032,'carroll_county':.0303,'cecil_county':.0274,'charles_county':.0303,
+          'dorchester_county':.033,'garrett_county':.0265,'harford_county':.0306,'howard_county':.032,
+          'kent_county':.033,'montgomery_county':.032,'prince_georges_county':.032,'queen_annes_county':.032,
+          'st_marys_county':.032,'somerset_county':.032,'talbot_county':.024,'washington_county':.0295,
+          'wicomico_county':.032,'worcester_county':.0225}
+MD_LOCAL={2026:{**{county:('flat',rate) for county,rate in _MD_FLAT.items()},
+    'anne_arundel_county':('graduated_brackets',{'single':((50000.,.027),(400000.,.0294),(None,.032)),
+                                                 'mfj':((75000.,.027),(480000.,.0294),(None,.032))}),
+    # One rate on all taxable net income, chosen by the income's band.
+    'frederick_county':('income_band_rate',{'single':((25000.,.0225),(50000.,.0275),(150000.,.0296),(None,.032)),
+                                            'mfj':((25000.,.0225),(100000.,.0275),(250000.,.0296),(None,.032))})}}
+MD_RULE_SOURCES={'md_standard_deduction':{2025:'md_standard_deduction_2025'},
+                 'md_pension_exclusion_limit':{2026:'md_pension_exclusion_2026'},
+                 'md_local_income_tax_rates':{2026:'md_local_rates_2026'}}
+# County rates continue until changed (TG 10-106(a)(2)): projected years keep them.
+MD_CARRIED_FORWARD={'md_local_income_tax_rates'}
+MD_STRING_FIELDS=('jurisdiction','residency','local_jurisdiction','local_rate_structure')
+MD_AMOUNT_FIELDS=('federal_adjusted_gross_income','additions','social_security_subtraction','pension_exclusion_limit',
+    'pension_exclusion','two_income_subtraction','subtractions','maryland_adjusted_gross_income','standard_deduction',
+    'exemption_per_person','age_65_exemptions','exemptions','taxable_net_income','state_tax_before_surtax',
+    'capital_gain_in_maryland_agi','capital_gain_surtax_base','capital_gain_surtax','state_tax_before_credits',
+    'senior_tax_credit','state_tax_after_credits','local_tax','total_state_and_local_tax','funding_cliff_excess_cash')
+MD_FIELDS={*MD_STRING_FIELDS,*MD_AMOUNT_FIELDS,'members','state_bracket_lines','local_tax_lines'}
+MD_MEMBER_FIELDS={'age','qualifying_pension_income','social_security_benefits','pension_exclusion','modified_maryland_agi'}
 
 class VerifyFailure(ValueError):
     pass
@@ -126,20 +176,78 @@ def taxable_benefits(benefits,provisional,status):
         return min(.5*benefits,.5*(provisional-first))
     return min(.85*benefits,.85*(provisional-second)+min(.5*benefits,.5*(second-first)))
 
-def expected_rule_basis(year,rate):
+def expected_rule_basis(year,rate,state=STATE_EXCLUDED):
     """Per rule family: the year's own published values, else the latest
-    published year indexed at the plan's assumed rate (projected)."""
+    published year indexed at the plan's assumed rate (projected). Maryland
+    families join when the plan selects Maryland; county rates carry forward."""
+    families=dict(RULE_SOURCES)
+    if state!=STATE_EXCLUDED:
+        families.update(MD_RULE_SOURCES)
     basis={}
-    for rule,sources in RULE_SOURCES.items():
+    for rule,sources in families.items():
         if year in sources:
             base,multiplier,status=year,1.,'published'
         elif year>max(sources):
             base=max(sources)
             multiplier,status=(1+rate)**(year-base),'projected'
+            if rule in MD_CARRIED_FORWARD:
+                multiplier=1.
         else:
             raise VerifyFailure(f'{year}: no published {rule} values to apply or project')
         basis[rule]={'status':status,'base_year':base,'multiplier':multiplier,'source_id':sources[base]}
     return basis
+
+
+def md_portions(income,brackets):
+    """(from, to, rate, amount) of each retyped marginal bracket up to income."""
+    portions=[]
+    low=0.
+    for top,rate in brackets:
+        high=income if top is None else min(income,top)
+        portions.append((low,top,rate,max(0.,high-low)))
+        if top is None or income<=top:
+            break
+        low=top
+    return portions
+
+
+def md_exemption(fagi,status):
+    for limit,amount in MD_EXEMPTION_LIMITS[status]:
+        if fagi<=limit:
+            return amount
+    return 0.
+
+
+def md_pension_exclusion(qualifying,social_security,limit,age):
+    """Worksheet 13A: 65 or older on December 31; the limit less all Social Security."""
+    return min(qualifying,max(0.,limit-social_security)) if age>=65 else 0.
+
+
+def md_credit(fagi,status,older):
+    limit,amounts=MD_SENIOR_CREDIT[status]
+    return amounts.get(older,0.) if fagi<=limit else 0.
+
+
+def md_local_lines(income,county,status,law):
+    """(structure, [(from, to, rate, amount)]) of the county tax."""
+    structure,schedule=law[county]
+    if structure=='flat':
+        return structure,[(0.,None,schedule,income)] if income>0 else []
+    if structure=='graduated_brackets':
+        return structure,[portion for portion in md_portions(income,schedule[status]) if portion[3]>0]
+    rate=next(rate for top,rate in schedule[status] if top is None or round(income,2)<=top)
+    return structure,[(0.,None,rate,income)] if income>0 else []
+
+
+def md_liability(status,county,law,fagi,md_agi,standard,ages,gain):
+    """Form 502 line 34 in one pass from the bases; thresholds use cents."""
+    fagi=round(fagi,2)
+    older=sum(age>=65 for age in ages)
+    taxable=max(0.,md_agi-standard-len(ages)*md_exemption(fagi,status)-older*MD_AGE_EXEMPTION)
+    state=sum(rate*amount for _,_,rate,amount in md_portions(taxable,MD_BRACKETS[status]))
+    state+=MD_SURTAX_RATE*max(0.,gain) if fagi>MD_SURTAX_FAGI else 0.
+    state-=min(md_credit(fagi,status,older),state)
+    return state+sum(rate*amount for _,_,rate,amount in md_local_lines(taxable,county,status,law)[1])
 
 def income_tax_policy(basis,year):
     """Documented per-year disclosure for the income-tax tables (output-contract.md)."""
@@ -279,7 +387,7 @@ def _verify(x,plan=None,engine_dir=None):
     if 'input_provenance' in x:
         verify_provenance(x['input_provenance'])
     if 'evidence_status' in x:
-        expected={'contract_version':'1.2','model':'restricted_research',
+        expected={'contract_version':'1.3','model':'restricted_research',
             'input':x['input_provenance']['mode'],'input_independently_verified':False,
             'professional_review':'not_recorded','market_calibration':'not_validated',
             'tax_rules':'published_tax_year_rules_with_labeled_hypothetical_projection',
@@ -379,8 +487,7 @@ def _verify(x,plan=None,engine_dir=None):
         both=sum(z['funded'] and z['terminal_real']>=threshold for z in manifest)
         close(x['funded_and_target_fraction'],both/count,'terminal target fraction',.00001)
     if engine_dir is not None:
-        actual=hashlib.sha256((engine_dir/'audit_plan.py').read_bytes()+
-                              (engine_dir/'tax2026.py').read_bytes()+(engine_dir/'tax_extensions.py').read_bytes()).hexdigest()
+        actual=hashlib.sha256(b''.join((engine_dir/name).read_bytes() for name in ENGINE_FILES)).hexdigest()
         if x['engine_source_sha256']!=actual:
             raise VerifyFailure('engine source SHA mismatch')
     return {'passed':True,'annual_rows':len(ledger),'mc_paths':count,
@@ -555,6 +662,7 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,cu
         for flows in row['account_flows'].values():
             numeric_vector(list(flows.values()),len(flows),'account flows')
         inv=_investment_view(row,current_contract)
+        state=_state_checks(row,policy,expect,current_contract,inv)
         # The carryover in is last year's carryover out (each cent-rounded), or the plan's.
         if previous_carry is not None:
             expect(inv['carry_in'],previous_carry,f'{y}: capital loss carryover in from the prior year',
@@ -632,8 +740,9 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,cu
         # discrepancy is possible, but not a four-cent coordinated tax shortfall.
         close(tax['total_federal_income_and_niit'],tax['federal_income_tax']+tax['niit_due'],
               f'{y}: federal/NIIT',.0101)
-        close(row['tax_due_total'],tax['total_federal_income_and_niit']+pf['total'],
-              f'{y}: total due',.0101+1e-12*abs(row['tax_due_total']))
+        # Maryland adds a third cent-rounded component.
+        close(row['tax_due_total'],tax['total_federal_income_and_niit']+pf['total']+state['total'],
+              f'{y}: total due',(.0151 if state['record'] else .0101)+1e-12*abs(row['tax_due_total']))
         # These sums gate the failure flag: each side is cent-rounded from an exact
         # unrounded identity, so they can differ by one cent, not five.
         close(row['tax_paid']+row['unpaid_tax'],row['tax_due_total'],f'{y}: unpaid tax',
@@ -677,11 +786,13 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,cu
             checks+=4
             max_residual=max(max_residual,abs(row['closing_accounts'][aid]-expected))
         checks+=27+(plan is not None)+len(row['rmd'])*3
-        _journal_checks(row,previous_basis,expect,inv)
-        _rule_checks(row,policy,plan,expect,current_contract,inv)
+        _journal_checks(row,previous_basis,expect,inv,state['excess'])
+        _rule_checks(row,policy,plan,expect,current_contract,inv,state)
         if plan is not None:
             path_return=deterministic_return(plan) if returns is None else returns[index]
             _plan_checks(row,plan,path_return,notices.get(y,[]),expect,unrounded_ira)
+            if state['record'] is not None:
+                _plan_state_checks(row,plan,state['record'],inv,expect)
             # Independently carry the unrounded IRA journal into the next year.
             # This also anchors the conversion decision to the plan rather than
             # to a rounded opening balance in the report.
@@ -743,7 +854,7 @@ def _verify_ledger(summary,policy,first_year,last_year,plan=None,returns=None,cu
     return checks,max_residual
 
 
-def _journal_checks(row,previous_basis,expect,inv):
+def _journal_checks(row,previous_basis,expect,inv,excess=0.):
     """Output-only links between row totals, account journals and balances."""
     y=row['year']
     accounts=row['account_flows']
@@ -830,9 +941,12 @@ def _journal_checks(row,previous_basis,expect,inv):
             opening=row['opening_accounts'][aid]
             expect(growth,opening*rate,f'{y}: {aid} growth at reported return',.0051+.005*abs(rate)+1e-12*abs(opening))
     # Draws stop once cash covers spending plus tax; unpaid amounts need exhausted cash.
+    # A draw that crosses a state threshold leaves exactly its reported excess.
     closing=row['closing_accounts']
     shortfall=row['unmet_spending']>0 or row['unpaid_tax']>0
-    if (drawn>.005 or shortfall) and closing[cash_id]>.01:
+    if excess and (shortfall or drawn<=.005 or abs(closing[cash_id]-excess)>.0101):
+        raise VerifyFailure(f'{y}: funding threshold excess must be the cash left after a funded draw')
+    if (drawn>.005 or shortfall) and closing[cash_id]>excess+.01:
         raise VerifyFailure(f'{y}: cash remained while accounts were drawn or obligations went unpaid')
     if row['unpaid_tax']>0 and row['living_expenses_paid']>0:
         raise VerifyFailure(f'{y}: spending was paid before taxes were fully paid')
@@ -950,6 +1064,155 @@ def _proportional_basis_checks(row,previous_basis,reinvested,treatments,expect):
     expect(row['realized_ltcg'],gains,f'{y}: realized long-term gain from proportional basis',slack+1e-12*abs(gains))
 
 
+def _state_checks(row,policy,expect,current_contract,inv):
+    """Maryland Form 502 subset recomputed from the row and retyped rules.
+
+    Returns the reported state total, its one-pass recomputation and any
+    funding-threshold excess. Thresholds compare the reported cent amounts,
+    which the engine also compares. Plan-only facts are in _plan_state_checks.
+    """
+    y=row['year']
+    spec=policy['state_income_tax']
+    none={'total':0.,'independent':0.,'excess':0.,'record':None}
+    if spec==STATE_EXCLUDED:
+        if (current_contract or 'state_tax' in row) and row.get('state_tax',None) is not None:
+            raise VerifyFailure(f'{y}: state tax reported although the plan excludes state income taxes')
+        return none
+    if not isinstance(spec,dict) or spec.get('jurisdiction')!=MD:
+        raise VerifyFailure(f'{y}: unsupported state income tax policy')
+    record=row.get('state_tax')
+    if not isinstance(record,dict) or set(record)!=MD_FIELDS:
+        raise VerifyFailure(f'{y}: Maryland state tax record fields changed')
+    status=policy['filing_status']
+    county=spec.get('local_jurisdiction')
+    law_basis=expected_rule_basis(y,policy['future_bracket_inflation'],spec)
+    law=MD_LOCAL[law_basis['md_local_income_tax_rates']['base_year']]
+    if (record['jurisdiction']!=MD or spec.get('residency')!=MD_RESIDENCY or record['residency']!=MD_RESIDENCY
+            or county not in law or record['local_jurisdiction']!=county
+            or record['local_rate_structure']!=law[county][0]):
+        raise VerifyFailure(f'{y}: Maryland jurisdiction, residency, county or local rate structure differs from the plan')
+    numeric_vector([record[key] for key in MD_AMOUNT_FIELDS],len(MD_AMOUNT_FIELDS),f'{y}: Maryland amounts')
+    for key in ('social_security_subtraction','pension_exclusion_limit','pension_exclusion','two_income_subtraction',
+                'subtractions','standard_deduction','exemption_per_person','age_65_exemptions','exemptions',
+                'taxable_net_income','state_tax_before_surtax','capital_gain_surtax_base','capital_gain_surtax',
+                'state_tax_before_credits','senior_tax_credit','state_tax_after_credits','local_tax',
+                'total_state_and_local_tax','funding_cliff_excess_cash'):
+        nonnegative(record[key],f'{y}: Maryland {key}')
+    tax=row['tax']
+    fagi=record['federal_adjusted_gross_income']
+    # Form 502 lines 1, 6 and 11 copy the federal return; no additions are modeled.
+    expect(fagi,tax['adjusted_gross_income'],f'{y}: Maryland line 1 federal AGI',0)
+    expect(record['additions'],0.,f'{y}: Maryland additions (none modeled)',0)
+    expect(record['social_security_subtraction'],tax['taxable_social_security'],
+           f'{y}: Maryland subtraction of taxable Social Security',0)
+    pension_basis=law_basis['md_pension_exclusion_limit']
+    limit=MD_PENSION_LIMIT[pension_basis['base_year']]*pension_basis['multiplier']
+    expect(record['pension_exclusion_limit'],limit,f'{y}: Maryland pension exclusion limit',.0051+1e-12*limit)
+    members=record['members']
+    if not isinstance(members,dict) or len(members)!=(2 if status=='mfj' else 1):
+        raise VerifyFailure(f'{y}: Maryland member records must match the filing status')
+    ages=[]
+    for mid,member in members.items():
+        if not isinstance(member,dict) or set(member)!=MD_MEMBER_FIELDS:
+            raise VerifyFailure(f'{y}: Maryland member {mid} fields changed')
+        if type(member['age']) is not int or not 0<=member['age']<=130:
+            raise VerifyFailure(f'{y}: Maryland member {mid} age must be a whole year')
+        ages.append(member['age'])
+        amounts=[member[key] for key in ('qualifying_pension_income','social_security_benefits','pension_exclusion')]
+        numeric_vector(amounts,3,f'{y}: Maryland member {mid}')
+        for value in amounts:
+            nonnegative(value,f'{y}: Maryland member {mid} amount')
+        # Worksheet 13A: age 65 or older on December 31; limit less all Social Security.
+        exclusion=md_pension_exclusion(member['qualifying_pension_income'],member['social_security_benefits'],
+                                       record['pension_exclusion_limit'],member['age'])
+        expect(member['pension_exclusion'],exclusion,f'{y}: Maryland pension exclusion of {mid}',.0151)
+        if status=='mfj':
+            numeric_vector([member['modified_maryland_agi']],1,f'{y}: Maryland modified AGI of {mid}')
+        elif member['modified_maryland_agi'] is not None:
+            raise VerifyFailure(f'{y}: a single filer has no two-income subtraction')
+    expect(sum(m['social_security_benefits'] for m in members.values()),row['social_security_gross'],
+           f'{y}: Maryland member Social Security totals the row',.0101+1e-12*row['social_security_gross'])
+    expect(record['pension_exclusion'],sum(m['pension_exclusion'] for m in members.values()),
+           f'{y}: Maryland pension exclusion total',.0151)
+    if status=='mfj':
+        modified=[m['modified_maryland_agi'] for m in members.values()]
+        # Worksheet 13D: each spouse's share; together FAGI less lines 10a and 11.
+        expect(sum(modified),fagi-record['social_security_subtraction']-record['pension_exclusion'],
+               f'{y}: Maryland modified AGI shares total FAGI less subtractions',.0251)
+        two=min(MD_TWO_INCOME_LIMIT,max(0.,min(modified)))
+    else:
+        two=0.
+    expect(record['two_income_subtraction'],two,f'{y}: Maryland two-income subtraction',.0101 if status=='mfj' else 0)
+    expect(record['subtractions'],record['social_security_subtraction']+record['pension_exclusion']+record['two_income_subtraction'],
+           f'{y}: Maryland total subtractions',.0151)
+    expect(record['maryland_adjusted_gross_income'],fagi-record['subtractions'],f'{y}: Maryland adjusted gross income',.0151)
+    std_basis=law_basis['md_standard_deduction']
+    standard=MD_STANDARD[std_basis['base_year']][status]*std_basis['multiplier']
+    expect(record['standard_deduction'],standard,f'{y}: Maryland standard deduction',.0051+1e-12*standard)
+    older=sum(age>=65 for age in ages)
+    expect(record['exemption_per_person'],md_exemption(fagi,status),f'{y}: Maryland exemption by FAGI',0)
+    expect(record['age_65_exemptions'],older*MD_AGE_EXEMPTION,f'{y}: Maryland age 65 exemptions',0)
+    expect(record['exemptions'],len(ages)*record['exemption_per_person']+record['age_65_exemptions'],
+           f'{y}: Maryland exemptions',1e-9)
+    taxable=record['taxable_net_income']
+    expect(taxable,max(0.,record['maryland_adjusted_gross_income']-record['standard_deduction']-record['exemptions']),
+           f'{y}: Maryland taxable net income',.0201)
+    portions=[portion for portion in md_portions(taxable,MD_BRACKETS[status]) if portion[3]>0]
+    def check_lines(lines,want,label):
+        if not isinstance(lines,list) or len(lines)>len(want):
+            raise VerifyFailure(f'{y}: extra {label} lines')
+        for k,(low,top,rate,amount) in enumerate(want):
+            if k>=len(lines):
+                if amount>.0101:
+                    raise VerifyFailure(f'{y}: {label} line {k} missing')
+                continue
+            line=lines[k]
+            if not isinstance(line,dict) or set(line)!={'from','to','rate','taxable','tax'}:
+                raise VerifyFailure(f'{y}: {label} line {k} fields changed')
+            if line['rate']!=rate or (line['to'] is None)!=(top is None):
+                raise VerifyFailure(f'{y}: {label} line {k} rate or top changed')
+            expect(line['from'],low,f'{y}: {label} line {k} start',0)
+            if top is not None:
+                expect(line['to'],top,f'{y}: {label} line {k} top',0)
+            expect(line['taxable'],amount,f'{y}: {label} line {k} amount',.0101)
+            expect(line['tax'],line['taxable']*rate,f'{y}: {label} line {k} multiplication',.0101)
+        return sum(rate*amount for _,_,rate,amount in want)
+    state_tax=check_lines(record['state_bracket_lines'],portions,'Maryland state bracket')
+    expect(record['state_tax_before_surtax'],state_tax,f'{y}: Maryland tax from the rate schedule',.0101)
+    gain=record['capital_gain_in_maryland_agi']
+    if inv['reported'] is None:
+        raise VerifyFailure(f'{y}: Maryland records require contract 1.3 investment fields')
+    expect(gain,tax['capital_gain_or_loss_in_agi'],f'{y}: Maryland line 1c is Form 1040 line 7a',0)
+    # TG 10-105(a)(3)-(4); Form 502CG line 9: none of the modeled assets is excepted.
+    base=max(0.,gain) if fagi>MD_SURTAX_FAGI else 0.
+    expect(record['capital_gain_surtax_base'],base,f'{y}: Maryland capital gain surtax base',0)
+    expect(record['capital_gain_surtax'],base*MD_SURTAX_RATE,f'{y}: Maryland capital gain surtax',.0051)
+    expect(record['state_tax_before_credits'],record['state_tax_before_surtax']+record['capital_gain_surtax'],
+           f'{y}: Maryland tax before credits',.0101)
+    credit=min(md_credit(fagi,status,older),record['state_tax_before_credits'])
+    expect(record['senior_tax_credit'],credit,f'{y}: Maryland senior tax credit',.0101)
+    expect(record['state_tax_after_credits'],record['state_tax_before_credits']-record['senior_tax_credit'],
+           f'{y}: Maryland tax after credits',.0101)
+    structure,local_portions=md_local_lines(taxable,county,status,law)
+    local=check_lines(record['local_tax_lines'],local_portions,'Maryland local')
+    expect(record['local_tax'],local,f'{y}: Maryland local tax',.0101)
+    expect(record['total_state_and_local_tax'],record['state_tax_after_credits']+record['local_tax'],
+           f'{y}: Maryland state and local total',.0101)
+    independent=md_liability(status,county,law,fagi,record['maryland_adjusted_gross_income'],
+                             record['standard_deduction'],ages,gain)
+    excess=record['funding_cliff_excess_cash']
+    if excess>0:
+        # Funding stops just past a threshold only when one more cent of FAGI
+        # (a slightly smaller loss sale) raises the Maryland tax by the excess.
+        recognized_loss=any(r['gain_treatment']==WITH_DISTRIBUTIONS and r['sale_gain_or_loss']<0
+                            for r in (inv['records'] or {}).values())
+        raised=md_liability(status,county,law,fagi+.01,record['maryland_adjusted_gross_income']+.01,
+                            record['standard_deduction'],ages,gain+.01)
+        if not recognized_loss or raised-record['total_state_and_local_tax']<excess-.02:
+            raise VerifyFailure(f'{y}: funding threshold excess without a Maryland threshold that a loss sale crosses')
+    return {'total':record['total_state_and_local_tax'],'independent':independent,'excess':excess,'record':record}
+
+
 def _rule_basis_checks(row,basis,expect):
     """A projected year may never be labeled published, nor rebased or reindexed."""
     y=row['year']
@@ -967,12 +1230,12 @@ def _rule_basis_checks(row,basis,expect):
         expect(got['multiplier'],want['multiplier'],f'{y}: {rule} index from {want["base_year"]}',.0000000051)
 
 
-def _rule_checks(row,policy,plan,expect,current_contract,inv):
+def _rule_checks(row,policy,plan,expect,current_contract,inv,state):
     """Recompute each restricted federal worksheet step from the retyped register."""
     y=row['year']
     tax=row['tax']
     status=policy['filing_status']
-    basis=expected_rule_basis(y,policy['future_bracket_inflation'])
+    basis=expected_rule_basis(y,policy['future_bracket_inflation'],policy['state_income_tax'])
     income=basis['income_tax_tables']
     law_year=income['base_year']
     law=PUBLISHED_INCOME_TAX[law_year]
@@ -1128,7 +1391,7 @@ def _rule_checks(row,policy,plan,expect,current_contract,inv):
                        +inv['interest']+inv['nonqualified']+inv['qualified'])
     independent_niit=.038*min(max(0.,investment_income),
         max(0.,tax['adjusted_gross_income']-(250000. if status=='mfj' else 200000.)))
-    independently_due=independent_income_tax+independent_niit+payroll_from_bases
+    independently_due=independent_income_tax+independent_niit+payroll_from_bases+state['independent']
     expect(row['tax_due_total'],independently_due,
            f'{y}: independently recomputed total federal liability',
            .0101+1e-12*abs(independently_due))
@@ -1251,6 +1514,47 @@ def _plan_checks(row,plan,path_return,blocks,expect,unrounded_ira):
             if later_draw:
                 raise VerifyFailure(f'{y}: {aid} kept a balance although the withdrawal order draws it first')
             raise VerifyFailure(f'{y}: shortfall reported while {aid} kept an accessible balance')
+
+
+def _plan_state_checks(row,plan,record,inv,expect):
+    """Maryland facts that need the plan: each member's age, Social Security,
+    qualifying pension income and two-income share, rebuilt from the schedule
+    and the row's account journals (jointly held income split evenly)."""
+    y=row['year']
+    spec=plan['tax_policy']['state_income_tax']
+    members=record['members']
+    if set(members)!={m['id'] for m in plan['members']}:
+        raise VerifyFailure(f'{y}: Maryland member records differ from the plan members')
+    scheduled=scheduled_income(plan,y)
+    factor=(1+plan['assumptions']['inflation'])**(y-plan['as_of_year'])
+    flows=row['account_flows']
+    joint=(row['growth_by_account'][row['cash_account_id']]+inv['interest']+inv['nonqualified']+inv['qualified']
+           +row['tax']['capital_gain_or_loss_in_agi'])
+    for index,member in enumerate(plan['members']):
+        mid=member['id']
+        got=members[mid]
+        age=y-member['birth_year']
+        if got['age']!=age:
+            raise VerifyFailure(f'{y}: Maryland age of {mid} mismatched to plan')
+        benefits=member['ss_annual_2026_real_at_chosen_claim_age']*factor if age>=member['ss_claim_age'] else 0.
+        pension=(member['annual_pension_2026_real']*factor
+                 if member.get('annual_pension_2026_real',0) and age>=member['pension_start_age'] else 0.)
+        own={'traditional_ira':0.,'traditional_401k':0.}
+        for account in plan['accounts']:
+            if account['kind'] in own and account.get('owner')==mid:
+                f=flows[account['id']]
+                own[account['kind']]+=f['required_distribution']+f['optional_draw']+f['roth_conversion_out']
+        # TG 10-209(a): employer plans under 401(a), 403 or 457(b) qualify; IRAs do not.
+        qualifying=(pension if spec['pension_plan_types'].get(mid)==MD_ERS else 0.)+own['traditional_401k']
+        expect(got['social_security_benefits'],benefits,f'{y}: Maryland Social Security of {mid} scheduled by plan',
+               .0051+1e-12*benefits)
+        expect(got['qualifying_pension_income'],qualifying,f'{y}: Maryland qualifying pension income of {mid}',
+               .0051+1e-12*qualifying)
+        if plan['tax_policy']['filing_status']=='mfj':
+            wages=scheduled['wages'][index]-scheduled['member_deferrals'][index]
+            modified=wages+pension+own['traditional_ira']+own['traditional_401k']+joint/2-got['pension_exclusion']
+            expect(got['modified_maryland_agi'],modified,f'{y}: Maryland two-income share of {mid}',
+                   .0201+1e-12*abs(modified))
 
 
 def main():

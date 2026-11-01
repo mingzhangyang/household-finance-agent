@@ -31,6 +31,8 @@ function expectedNotices(result,row) {
       items.push(`应税账户 ${id} 按旧版口径未确认出售亏损 ${dollars(-r.sale_gain_or_loss,2)}`);
   if(row.tax.capital_loss_adjusted_taxable_income!==null&&row.tax.enhanced_senior_deduction>0)
     items.push('资本损失结转按 IRC §1212(b) 加回 §151 老年人增强扣除计算；IRS 尚未发布适用于该年度的结转工作表，这一处理待复核人确认。');
+  if(row.state_tax&&Math.round(row.state_tax.funding_cliff_excess_cash*100)>0)
+    items.push(`资金求解跨过 Maryland 门槛：出售亏损使联邦 AGI 降到门槛，州税下降超过多出售的金额，${dollars(row.state_tax.funding_cliff_excess_cash,2)} 留在现金账户。`);
   return items.length?items:['本年度没有提款限制、未执行的转换或 RMD 缺口。'];
 }
 // Taxable records and Schedule D steps, verbatim from the engine row.
@@ -49,10 +51,28 @@ function expectedTaxable(row) {
   return values;
 }
 function expectedRuleBasis(row) {
-  const names={income_tax_tables:'所得税税阶、标准扣除与资本利得门槛',oasdi_wage_base:'社保工资上限',elective_deferral_limit:'401(k) 基本缴款限额'};
-  return Object.entries(names).map(([family,name])=>{const b=row.rule_basis[family];
-    return b.status==='published'?`${name}：${b.base_year} 年已公布数值（${b.source_id}）`
-      :`${name}：${b.base_year} 年已公布数值 × ${b.multiplier.toFixed(8)}，按方案假设指数推算到 ${row.year} 年，不是已公布的 ${row.year} 年数值（${b.source_id}）`});
+  const names={income_tax_tables:'所得税税阶、标准扣除与资本利得门槛',oasdi_wage_base:'社保工资上限',elective_deferral_limit:'401(k) 基本缴款限额',
+    md_standard_deduction:'Maryland 标准扣除',md_pension_exclusion_limit:'Maryland 养老金排除上限',md_local_income_tax_rates:'Maryland 县及 Baltimore City 地方税率'};
+  return Object.entries(names).filter(([family])=>family in row.rule_basis).map(([family,name])=>{const b=row.rule_basis[family];
+    if(b.status==='published')return `${name}：${b.base_year} 年已公布数值（${b.source_id}）`;
+    if(family==='md_local_income_tax_rates')return `${name}：沿用 ${b.base_year} 年已公布税率（县税率不随通胀调整，县政府修改前持续有效），不是已公布的 ${row.year} 年税率（${b.source_id}）`;
+    return `${name}：${b.base_year} 年已公布数值 × ${b.multiplier.toFixed(8)}，按方案假设指数推算到 ${row.year} 年，不是已公布的 ${row.year} 年数值（${b.source_id}）`});
+}
+// Maryland Form 502 lines, verbatim from the engine row (or the federal-only text).
+function expectedState(row) {
+  const s=row.state_tax;
+  if(s===null)return ['方案选择仅联邦研究口径：未计算州及地方所得税'];
+  const usd=v=>dollars(v,2);
+  const members=Object.values(s.members).flatMap(m=>[String(m.age),...[m.qualifying_pension_income,m.social_security_benefits,
+    m.pension_exclusion].map(usd),...(m.modified_maryland_agi===null?[]:[usd(m.modified_maryland_agi)])]);
+  const structures={flat:'单一税率',graduated_brackets:'分级累进税率（Anne Arundel）',income_band_rate:'按收入段对全部应税净收入适用单一税率（Frederick）'};
+  return [...[s.federal_adjusted_gross_income,s.additions,s.social_security_subtraction,s.pension_exclusion_limit].map(usd),...members,
+    ...[s.pension_exclusion,s.two_income_subtraction,s.subtractions,s.maryland_adjusted_gross_income,s.standard_deduction,
+        s.exemption_per_person,s.age_65_exemptions,s.exemptions,s.taxable_net_income].map(usd),
+    ...s.state_bracket_lines.map(line=>usd(line.tax)),...[s.state_tax_before_surtax,s.capital_gain_in_maryland_agi,
+        s.capital_gain_surtax_base,s.capital_gain_surtax,s.state_tax_before_credits,s.senior_tax_credit,s.state_tax_after_credits].map(usd),
+    structures[s.local_rate_structure],...s.local_tax_lines.map(line=>usd(line.tax)),
+    ...[s.local_tax,s.total_state_and_local_tax,s.funding_cliff_excess_cash].map(usd)];
 }
 async function main() {
   await fs.mkdir(output,{recursive:true});
@@ -107,6 +127,7 @@ async function main() {
             heading:document.querySelector('#year-heading').textContent,
             tax:[...document.querySelectorAll('#tax-details dd')].map(x=>x.textContent),
             taxable:[...document.querySelectorAll('#taxable-details dd, #schedule-d-details dd')].map(x=>x.textContent),
+            state:[...document.querySelectorAll('#state-income-details dd, #state-tax-details dd')].map(x=>x.textContent),
             notices:[...document.querySelectorAll('#year-notices li')].map(x=>x.textContent),
             basis:[...document.querySelectorAll('#year-rule-basis li')].map(x=>x.textContent),
             accounts:[...document.querySelectorAll('#account-rows tr')].map(tr=>[...tr.cells].map(td=>td.textContent))
@@ -115,11 +136,13 @@ async function main() {
           assert.deepEqual(ui.notices,expectedNotices(result,row));
           assert.deepEqual(ui.basis,expectedRuleBasis(row));
           assert.deepEqual(ui.taxable,expectedTaxable(row));
+          assert.deepEqual(ui.state,expectedState(row));
           assert.deepEqual(ui.tax.slice(1),[row.wages_taxable,row.tax.taxable_social_security,
             row.realized_ltcg,row.ira_extra_taxable,row.tax.adjusted_gross_income,
             row.tax.standard_plus_age_deduction,row.tax.enhanced_senior_deduction,row.tax.ordinary_taxable,
             row.tax.long_term_gain_taxable,row.tax.ordinary_tax,row.tax.capital_gains_tax,
-            row.tax.niit_due,row.tax.niit_tax_base,row.payroll_tax.total,row.tax_due_total].map(v=>dollars(v,2)));
+            row.tax.niit_due,row.tax.niit_tax_base,row.payroll_tax.total,
+            ...(row.state_tax?[row.state_tax.total_state_and_local_tax]:[]),row.tax_due_total].map(v=>dollars(v,2)));
           assert.deepEqual(ui.accounts,Object.keys(row.closing_accounts).map(id=>{
             const f=row.account_flows[id];
             return [id,...[row.opening_accounts[id],row.growth_by_account[id],f.contribution,
@@ -193,11 +216,16 @@ async function main() {
   const context=await browser.newContext({offline:true}), page=await context.newPage();
   const invalidCases=[['invalid-json','{'],['empty',JSON.stringify({plans:[],results:[],verification:[],labels:[]})],['failed-verification',JSON.stringify({...payload,verification:payload.verification.map(v=>({...v,passed:false}))})]];
   for(const scenario of payload.results.keys()) for(const laterYear of [false,true]) {
-    for(const target of ['chart','tax-detail','rule-basis']) {
+    for(const target of ['chart','tax-detail','rule-basis','state-record']) {
       const broken=JSON.parse(JSON.stringify(payload));
       const result=broken.results[scenario], year=laterYear?result.deterministic_annual_ledger.rows.length-1:0;
       if(target==='chart')result.annual_real_percentiles[year].p50='invalid';
       else if(target==='tax-detail')result.deterministic_annual_ledger.rows[year].tax.ordinary_tax='invalid';
+      // A Maryland record moved to another county, or dropped, must not render.
+      else if(target==='state-record'){
+        const row=result.deterministic_annual_ledger.rows[year];
+        if(row.state_tax)row.state_tax.local_jurisdiction='frederick_county';else row.state_tax={};
+      }
       // A projected year coherently relabeled as its own published year must not render.
       else {
         const row=result.deterministic_annual_ledger.rows[year];

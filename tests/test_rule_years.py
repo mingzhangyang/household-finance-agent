@@ -16,6 +16,7 @@ from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import audit_plan
+import maryland_tax
 import tax2026
 import verify_outputs
 from verify_outputs import verify,verify_trace,VerifyFailure
@@ -100,6 +101,23 @@ class ReportRegisterCopy(unittest.TestCase):
         engine={family:{str(year):entry['source_id'] for year,entry in published.items()}
                 for family,published in tax2026.RULE_FAMILIES.items()}
         self.assertEqual(listed,engine)
+
+    def test_report_template_lists_the_engine_state_families(self):
+        # Maryland families: published years, source IDs and the projection of later years.
+        template=(ROOT/'assets/audit-template.html').read_text()
+        listed=json.loads(re.search(r'function publishedStateRuleYears\(\)\{return (\{.*?\});\}',template).group(1))
+        engine={maryland_tax.JURISDICTION:{family:{'projection':projection,
+                    'years':{str(year):entry['source_id'] for year,entry in published.items()}}
+                for family,(published,projection) in maryland_tax.RULE_FAMILIES.items()}}
+        self.assertEqual(listed,engine)
+        # The verifier's retyped copy names the same years, sources and carried-forward family.
+        self.assertEqual({family:{year:source for year,source in sources.items()}
+                          for family,sources in verify_outputs.MD_RULE_SOURCES.items()},
+                         {family:{year:entry['source_id'] for year,entry in published.items()}
+                          for family,(published,_) in maryland_tax.RULE_FAMILIES.items()})
+        self.assertEqual(verify_outputs.MD_CARRIED_FORWARD,
+                         {family for family,(_,projection) in maryland_tax.RULE_FAMILIES.items()
+                          if projection=='carried_forward'})
 
 
 class PublishingANewYear(unittest.TestCase):

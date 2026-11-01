@@ -12,7 +12,9 @@ from verify_outputs import verify,VerifyFailure
 P=json.loads((ROOT/'examples/audited-household-2026.json').read_text())
 
 def short():
+    """Federal-only research scope: these checks assert federal identities."""
     p=copy.deepcopy(P)
+    p['tax_policy']['state_income_tax']='excluded_with_disclosure'
     p['end_year']=2030
     p['events']=[]
     p['assumptions']['trials']=12
@@ -46,9 +48,8 @@ class AnnualLedgerContract(unittest.TestCase):
     def test_input_sha_and_engine_source_hash(self):
         p=short();result=audit_plan.evaluate(p)
         self.assertTrue(verify(result,p,ROOT/'scripts')['passed'])
-        expected=hashlib.sha256((ROOT/'scripts/audit_plan.py').read_bytes()+
-              (ROOT/'scripts/tax2026.py').read_bytes()+
-              (ROOT/'scripts/tax_extensions.py').read_bytes()).hexdigest()
+        expected=hashlib.sha256(b''.join((ROOT/'scripts'/name).read_bytes() for name in
+              ('audit_plan.py','tax2026.py','tax_extensions.py','state_tax.py','maryland_tax.py'))).hexdigest()
         self.assertEqual(result['engine_source_sha256'],expected)
     def test_tampered_ledger_rejected(self):
         p=short();result=audit_plan.evaluate(p)

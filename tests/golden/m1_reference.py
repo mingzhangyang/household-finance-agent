@@ -328,6 +328,120 @@ def taxable_niit_loss_limit():
     return dict(rows=[expected],failed=False,first_failure_year=None)
 
 
+def maryland_retirees():
+    # MFJ, both born 1957 (70 in 2027, 71 in 2028); zero returns, inflation and
+    # rate: frozen 2026 federal tables, the 2025 Maryland standard deduction and
+    # the 2026 pension exclusion limit. a: employee-retirement-system pension
+    # 60,000 and Social Security 24,000; b: Social Security 12,000 and a 401(k)
+    # that funds the rest of 110,000 spending from an empty cash account.
+    # Federal: provisional income 78,000+D is far above 44,000, so taxable SS
+    # is the cap .85*36,000=30,600; deductions 32,200+2*1,650+2*6,000=47,500;
+    # taxable 60,000+D+30,600-47,500=43,100+D in the 12% bracket:
+    # T=2,480+.12*(43,100+D-24,800)=4,676+.12D.
+    # Maryland, independent of D while D <= 40,600-12,000=28,600:
+    # exclusion a=min(60,000, 40,600-24,000)=16,600 and b=D; modified AGI
+    # a=60,000-16,600=43,400 and b=D-D=0, so no two-income subtraction;
+    # MD AGI=90,600+D-30,600-16,600-D=43,400; exemptions 2*3,200+2*1,000;
+    # taxable 43,400-6,700-8,400=28,300; state 90+.0475*25,300=1,291.75,
+    # all offset by the 1,750 senior credit; Montgomery 3.2% of 28,300=905.60.
+    # D=110,000+T+905.60-96,000, so .88D=19,581.60.
+    local=D('.032')*D(28300); state=D(90)+D('.0475')*D(25300)
+    d=(D(110000)+D(4676)+local-D(96000))/D('.88')
+    assert 0<d<=D(28600) and D(43100)+d<=D(100800) and D(90600)+d<=D(150000) and state<D(1750)
+    fed=D(4676)+D('.12')*d
+    rows=[]; balance=D(500000)
+    for year in (2027,2028):
+        age=year-1957
+        opening=dict(cash=D(0),**{'401k_b':balance}); balance-=d
+        closing=dict(cash=D(0),**{'401k_b':balance})
+        expected=row(year,opening,closing,spending=110000,tax=fed+local,pension=60000,ss=36000,draws={'401k_b':d},
+            tax_fields=dict(adjusted_gross_income=D(90600)+d,taxable_social_security=30600,
+                standard_plus_age_deduction=35500,enhanced_senior_deduction=12000,deduction_total=47500,
+                ordinary_taxable=D(43100)+d,ordinary_tax=fed,federal_income_tax=fed,niit_due=0))
+        expected.update(ira_extra_taxable=d,taxable_basis_end={},state_tax=dict(
+            federal_adjusted_gross_income=D(90600)+d,social_security_subtraction=30600,pension_exclusion_limit=40600,
+            members={'a':dict(age=age,qualifying_pension_income=60000,social_security_benefits=24000,
+                              pension_exclusion=16600,modified_maryland_agi=43400),
+                     'b':dict(age=age,qualifying_pension_income=d,social_security_benefits=12000,
+                              pension_exclusion=d,modified_maryland_agi=0)},
+            pension_exclusion=D(16600)+d,two_income_subtraction=0,subtractions=D(47200)+d,
+            maryland_adjusted_gross_income=43400,standard_deduction=6700,exemption_per_person=3200,
+            age_65_exemptions=2000,exemptions=8400,taxable_net_income=28300,state_tax_before_surtax=state,
+            capital_gain_surtax=0,state_tax_before_credits=state,senior_tax_credit=state,state_tax_after_credits=0,
+            local_rate_structure='flat',local_tax=local,total_state_and_local_tax=local,funding_cliff_excess_cash=0))
+        rows.append(expected)
+    return dict(rows=rows,failed=False,first_failure_year=None)
+
+
+def maryland_surtax():
+    # Single, 50 in 2027, wages 400,000; zero returns; Anne Arundel County. A
+    # 500,000 taxable account pays 2% qualified dividends, 1% interest and 4%
+    # capital gain distributions (10,000, 5,000, 20,000), reinvested; no sale.
+    # Federal: ordinary 405,000; AGI 435,000; taxable ordinary 388,900 in the
+    # 35% bracket: 58,448+.35*132,675; preferential 30,000 at 15% (below the
+    # 545,500 top and far cheaper than the 35% cap); NIIT .038*35,000 (MAGI
+    # exceeds 200,000 by more than NII); FICA at the published 2027 cap.
+    # Maryland: no subtractions; standard 3,350; no exemption (FAGI > 150,000);
+    # taxable 431,650: 12,760+.0575*181,650; FAGI > 350,000, so 2% of the
+    # 20,000 line 7a gain; Anne Arundel 11,640+.032*31,650.
+    ordinary_tax=D(58448)+D('.35')*D(132675); gains_tax=D('.15')*D(30000); niit=D('.038')*D(35000)
+    payroll=D(192300)*D('.062')+D(400000)*D('.0145')+D(200000)*D('.009')
+    state=D(12760)+D('.0575')*D(181650); surtax=D('.02')*D(20000); local=D(11640)+D('.032')*D(31650)
+    tax=ordinary_tax+gains_tax+niit+payroll+state+surtax+local
+    closing=dict(cash=D(200000)+D(400000)-D(100000)-tax,taxable=D(500000))
+    assert closing['cash']>0
+    expected=row(2027,dict(cash=D(200000),taxable=D(500000)),closing,spending=100000,tax=tax,wages=400000,
+        taxable_wages=400000,basis=535000,payroll=payroll,tax_fields=dict(gross_ordinary=405000,
+            adjusted_gross_income=435000,taxable_account_interest=5000,qualified_dividends=10000,
+            capital_gain_distributions=20000,net_capital_gain_or_loss=20000,capital_gain_or_loss_in_agi=20000,
+            preferential_income=30000,standard_plus_age_deduction=16100,deduction_total=16100,
+            ordinary_taxable=388900,long_term_gain_taxable=30000,ordinary_tax=ordinary_tax,capital_gains_tax=gains_tax,
+            income_tax_method='stacked_capital_gains',federal_income_tax=ordinary_tax+gains_tax,
+            niit_net_investment_income=35000,niit_tax_base=35000,niit_due=niit))
+    expected['payroll_tax']=dict(wage_base_per_person=D(192300),total=payroll)
+    expected['taxable_accounts']={'taxable':taxable_record(D(10000),D(0),D(5000),D(20000),D(0),D(1))}
+    expected['state_tax']=dict(federal_adjusted_gross_income=435000,social_security_subtraction=0,
+        members={'a':dict(age=50,qualifying_pension_income=0,social_security_benefits=0,pension_exclusion=0,
+                          modified_maryland_agi=None)},
+        pension_exclusion=0,two_income_subtraction=0,maryland_adjusted_gross_income=435000,standard_deduction=3350,
+        exemption_per_person=0,exemptions=0,taxable_net_income=431650,state_tax_before_surtax=state,
+        capital_gain_in_maryland_agi=20000,capital_gain_surtax_base=20000,capital_gain_surtax=surtax,
+        state_tax_before_credits=state+surtax,senior_tax_credit=0,state_tax_after_credits=state+surtax,
+        local_rate_structure='graduated_brackets',
+        local_tax_lines=[dict(**{'from':0,'to':50000},rate=D('.027'),taxable=50000,tax=1350),
+                         dict(**{'from':50000,'to':400000},rate=D('.0294'),taxable=350000,tax=10290),
+                         dict(**{'from':400000,'to':None},rate=D('.032'),taxable=31650,tax=D('1012.8'))],
+        local_tax=local,total_state_and_local_tax=state+surtax+local)
+    return dict(rows=[expected],failed=False,first_failure_year=None)
+
+
+def maryland_two_earners():
+    # MFJ, 42 and 40 in 2027, wages 90,000 (10,000 pretax 401(k)) and 40,000;
+    # zero returns; cash covers spending; Frederick County.
+    # Federal: AGI 120,000; taxable 87,800 = 2,480+.12*63,000; FICA on 130,000.
+    # Maryland: modified AGI 80,000 and 40,000, so the 1,200 two-income
+    # subtraction; MD AGI 118,800; standard 6,700; exemptions 2*3,200 (FAGI
+    # not over 150,000); taxable 105,700: 90+.0475*102,700. Frederick applies
+    # .0296 to ALL taxable net income between 100,001 and 250,000 (joint).
+    fed=D(2480)+D('.12')*D(63000); payroll=D(130000)*(D('.062')+D('.0145'))
+    state=D(90)+D('.0475')*D(102700); local=D('.0296')*D(105700)
+    tax=fed+payroll+state+local
+    closing={'cash':D(50000)+D(120000)-D(80000)-tax,'401k_a':D(10000)}
+    expected=row(2027,{'cash':D(50000),'401k_a':D(0)},closing,spending=80000,tax=tax,wages=130000,
+        taxable_wages=120000,contributions=10000,payroll=payroll,tax_fields=dict(gross_ordinary=120000,
+            adjusted_gross_income=120000,standard_plus_age_deduction=32200,deduction_total=32200,
+            ordinary_taxable=87800,ordinary_tax=fed,federal_income_tax=fed,niit_due=0))
+    expected.update(taxable_basis_end={},state_tax=dict(federal_adjusted_gross_income=120000,
+        members={'a':dict(age=42,modified_maryland_agi=80000),'b':dict(age=40,modified_maryland_agi=40000)},
+        two_income_subtraction=1200,subtractions=1200,maryland_adjusted_gross_income=118800,standard_deduction=6700,
+        exemption_per_person=3200,age_65_exemptions=0,exemptions=6400,taxable_net_income=105700,
+        state_tax_before_surtax=state,capital_gain_surtax=0,senior_tax_credit=0,state_tax_after_credits=state,
+        local_rate_structure='income_band_rate',
+        local_tax_lines=[dict(**{'from':0,'to':None},rate=D('.0296'),taxable=105700,tax=local)],
+        local_tax=local,total_state_and_local_tax=state+local))
+    return dict(rows=[expected],failed=False,first_failure_year=None)
+
+
 def references():
     with localcontext() as ctx:
         ctx.prec=40
@@ -336,4 +450,7 @@ def references():
                 'account-depletion':account_depletion(),
                 'growth-indexing':growth_indexing(),
                 'taxable-distributions-carryover':taxable_distributions_carryover(),
-                'taxable-niit-loss-limit':taxable_niit_loss_limit()}
+                'taxable-niit-loss-limit':taxable_niit_loss_limit(),
+                'maryland-retirees-exclusion-credit':maryland_retirees(),
+                'maryland-surtax-anne-arundel':maryland_surtax(),
+                'maryland-two-earners-frederick':maryland_two_earners()}

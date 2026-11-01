@@ -17,8 +17,11 @@ from pathlib import Path
 from datetime import date
 from tax2026 import federal_tax, payroll_tax, elective_deferral_limit, rule_basis, RULE_FAMILIES, SOURCES
 from tax_extensions import net_investment_income_tax, SOURCE as NIIT_SOURCE
+import state_tax
 
 RULESET = 'US_FEDERAL_2026_RESTRICTED_v2.2'
+# Source files whose bytes form engine_source_sha256, in this order.
+ENGINE_FILES = ('audit_plan.py','tax2026.py','tax_extensions.py','state_tax.py','maryland_tax.py')
 KINDS = {'cash','taxable','traditional_ira','traditional_401k','roth_ira'}
 # Taxable-account treatments. The legacy label models no distributions and
 # floors each sale's gain at zero; it is kept so earlier plans still replay.
@@ -148,8 +151,8 @@ def _validate(p):
         raise ModelError('filing_status must match household: single or mfj')
     if filing.get('reference_year')!=2026 or filing.get('jurisdiction')!='US_federal':
         raise ModelError('tax_policy requires US_federal reference year 2026')
-    if filing.get('state_income_tax')!='excluded_with_disclosure':
-        raise ModelError('state income taxes excluded; explicit disclosure required')
+    if 'state_income_tax' not in filing:
+        raise ModelError('tax_policy.state_income_tax required: "excluded_with_disclosure" or a registered jurisdiction')
     rate=_num(filing.get('future_bracket_inflation'),'future_bracket_inflation',0,.1)
     a=p.get('assumptions',{})
     if not isinstance(a,dict): raise ModelError('assumptions must be object')
@@ -286,10 +289,29 @@ def _validate(p):
     _num(p.get('terminal_target_2026_real',0),'terminal_target_2026_real')
     if 'capital_loss_carryover_into_2027' in p:
         _num(p['capital_loss_carryover_into_2027'],'capital_loss_carryover_into_2027')
+    # After members and accounts: a jurisdiction may require facts about them.
+    state_tax.validate(filing['state_income_tax'],p,ModelError)
     return True
 
 
-def _tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,interest,rmd,conversion,ira_extra,gain):
+def _state_persons(p,year,persons,retirement,draws):
+    """Each member's own income for a state return: wages after deferrals, pension,
+    Social Security and the traditional-account amounts of accounts they own."""
+    kinds={a['id']:(a['kind'],a.get('owner')) for a in p['accounts']}
+    result=[]
+    for person in persons:
+        own={'traditional_ira':0.,'traditional_401k':0.}
+        for aid,amount in list(retirement.items())+list(draws.items()):
+            kind,owner=kinds[aid]
+            if kind in own and owner==person['id']:
+                own[kind]+=amount
+        result.append({**person,'age':year-next(m['birth_year'] for m in p['members'] if m['id']==person['id']),
+                       'ira_income':own['traditional_ira'],'plan_401k_income':own['traditional_401k']})
+    return result
+
+
+def _tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,interest,rmd,conversion,ira_extra,gain,
+              persons=(),retirement=None,draws=None):
     ages=[year-m['birth_year'] for m in p['members']]
     fed=federal_tax(wages_taxable=wage_taxable,pension=pension,ira_distributions=rmd+ira_extra,
             roth_conversions=conversion,cash_interest=interest,ltcg=gain,
@@ -315,12 +337,27 @@ def _tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,in
     fed['niit_due']=niit['niit_due']
     fed['total_federal_income_and_niit']=fed['federal_income_tax']+niit['niit_due']
     fed['unmodeled']=[item for item in fed['unmodeled'] if item!='NIIT']
-    return fed,payroll, fed['total_federal_income_and_niit']+payroll['total']
+    total=fed['total_federal_income_and_niit']+payroll['total']
+    spec=p['tax_policy']['state_income_tax']
+    state=None
+    if spec!=state_tax.EXCLUDED:
+        fed['unmodeled']=[item for item in fed['unmodeled'] if item!='state/local income taxes']
+        # Jointly held: cash interest, taxable-account income and Form 1040 line 7a.
+        joint=(interest+invest['interest']+invest['nonqualified_dividends']+invest['qualified_dividends']
+               +fed['capital_gain_or_loss_in_agi'])
+        state=state_tax.compute(spec,year=year,status=p['tax_policy']['filing_status'],
+            assumed_rate=p['tax_policy']['future_bracket_inflation'],fagi=fed['adjusted_gross_income'],
+            capital_gain_in_agi=fed['capital_gain_or_loss_in_agi'],
+            taxable_social_security=fed['taxable_social_security'],
+            persons=_state_persons(p,year,persons,retirement or {},draws or {}),joint_income=joint)
+        total+=state['total_state_and_local_tax']
+    return fed,payroll,total,state
 
 
-def _bisect_funding(fund,low,high,year):
+def _bisect_funding(fund,low,high,year,allow_cliff=False):
     """Root of tax(guess) = guess between a guess whose tax is higher and one whose
-    tax is lower, for the cases fixed-point steps cannot settle."""
+    tax is lower, for the cases fixed-point steps cannot settle. Returns the
+    funding and whether it crosses a state threshold instead of meeting a root."""
     if high is None:
         high=max(1.,2*low)
         for _ in range(200):
@@ -333,13 +370,20 @@ def _bisect_funding(fund,low,high,year):
         middle=(low+high)/2
         if not low<middle<high:break
         final=fund(middle)
-        if abs(final[7]-middle)<.00001:return final
+        if abs(final[7]-middle)<.00001:return final,False
         if final[7]>middle:low=middle
         else:high=middle
     # Adjacent floats can still straddle the tolerance; the low side leaves no
     # idle cash and at most a sub-cent unpaid amount.
     final=fund(low)
-    if 0<=final[7]-low<.001:return final
+    if 0<=final[7]-low<.001:return final,False
+    # A recognized loss lowers FAGI as the draw grows; crossing a state threshold
+    # (exemption step, senior credit, surtax, county band) then drops the tax by
+    # more than the draw, and no draw pays exactly its tax. The least funding
+    # that pays everything is just past the threshold; the excess stays in cash.
+    if allow_cliff:
+        upper=fund(high)
+        if upper[7]<high:return upper,True
     raise ModelError(f'{year}: tax funding iteration failed to converge')
 
 
@@ -358,7 +402,9 @@ def run_path(p, annual_portfolio_returns, verify=True):
     rows=[]; fail_years=[]; notices=[]
     for n,year in enumerate(range(y0+1,y1+1),start=1):
         factor=(1+p['assumptions']['inflation'])**n
-        basis_by_rule=rule_basis(year,p['tax_policy']['future_bracket_inflation'])
+        spec=p['tax_policy']['state_income_tax']
+        basis_by_rule={**rule_basis(year,p['tax_policy']['future_bracket_inflation']),
+                       **state_tax.rule_basis(spec,year,p['tax_policy']['future_bracket_inflation'])}
         start=bal.copy(); growth={}
         r=max(-.999,annual_portfolio_returns[n-1])
         for aid,acc in amap.items():
@@ -377,7 +423,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
             basis[aid]+=sum(dist.values())
             distributions[aid]=dist
         invest={field:sum(d[field] for d in distributions.values()) for field in DISTRIBUTION_YIELDS.values()}
-        wages_by_person=[]; wage_taxable=0.; pension=0.; ss=0.; contribs={}
+        wages_by_person=[]; wage_taxable=0.; pension=0.; ss=0.; contribs={}; persons=[]
         for m in p['members']:
             age=year-m['birth_year']
             wages=m['annual_wages_2026']*(1+m['wage_growth'])**n if age < m['retirement_age'] else 0.
@@ -392,10 +438,11 @@ def run_path(p, annual_portfolio_returns, verify=True):
             bal[cash_id]+=wages-contrib
             if contrib:
                 target=m['pretax_401k_target'];bal[target]+=contrib;contribs[target]=contribs.get(target,0)+contrib
-            if age>=m['ss_claim_age']:
-                ss+=m['ss_annual_2026_real_at_chosen_claim_age']*factor
-            if age>=m.get('pension_start_age',65):
-                pension+=m.get('annual_pension_2026_real',0)*factor
+            own_ss=m['ss_annual_2026_real_at_chosen_claim_age']*factor if age>=m['ss_claim_age'] else 0.
+            own_pension=m.get('annual_pension_2026_real',0)*factor if age>=m.get('pension_start_age',65) else 0.
+            ss+=own_ss
+            pension+=own_pension
+            persons.append({'id':m['id'],'wages_taxable':wages-contrib,'pension':own_pension,'social_security':own_ss})
         bal[cash_id]+=ss+pension
         ev_in=ev_out=0.
         for e in p.get('events',[]):
@@ -428,6 +475,12 @@ def run_path(p, annual_portfolio_returns, verify=True):
                 continue
             bal[src]-=amount;bal[dst]+=amount;converted+=amount
             conversion_transfers.append({'from':src,'to':dst,'amount':amount})
+        # Taxable traditional-account amounts before funding draws, by account.
+        retirement={}
+        for entry in rmd_detail:
+            retirement[entry['account']]=retirement.get(entry['account'],0.)+entry['taken']
+        for entry in conversion_transfers:
+            retirement[entry['from']]=retirement.get(entry['from'],0.)+entry['amount']
         # Iterative funding: tax depends on taxable dispositions and IRA withdrawals.
         # Each iteration restarts from the same pre-withdrawal balances/basis.
         pre_draw=bal.copy();pre_basis=basis.copy()
@@ -459,15 +512,19 @@ def run_path(p, annual_portfolio_returns, verify=True):
                 if kind in ('traditional_ira','traditional_401k'):
                     ira_extra+=draw
                 working[aid]-=draw;required-=draw;draws[aid]=draw
-            fed,payroll,tax_new=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,ira_extra,gain)
-            return (working,wbasis,draws,gain,ira_extra,fed,payroll,tax_new,blocks,sales)
-        tax_guess=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,converted,0.,0.)[2]
+            fed,payroll,tax_new,state=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,
+                cash_interest,rmd_total,converted,ira_extra,gain,persons=persons,retirement=retirement,
+                draws={aid:v for aid,v in draws.items() if amap[aid]['kind'] in ('traditional_ira','traditional_401k')})
+            return (working,wbasis,draws,gain,ira_extra,fed,payroll,tax_new,blocks,sales,state)
+        tax_guess=_tax_calc(p,year,invest,carryover,wages_by_person,wage_taxable,pension,ss,cash_interest,rmd_total,
+                            converted,0.,0.,persons=persons,retirement=retirement)[2]
         # tax(guess) - guess is continuous and decreasing in the guess (each drawn
         # dollar adds well under a dollar of tax), so its root is unique. Fixed-point
         # steps converge while tax rises with draws; a recognized loss can make tax
         # fall faster than draws rise, and the steps then alternate. Every step
         # narrows a bracket [low, high] around the root for the bisection fallback.
         low,high=0.,None
+        cliff=False
         for attempt in range(150):
             final=fund(tax_guess)
             tax_new=final[7]
@@ -475,8 +532,8 @@ def run_path(p, annual_portfolio_returns, verify=True):
             if tax_new>tax_guess:low=max(low,tax_guess)
             else:high=tax_guess if high is None else min(high,tax_guess)
             tax_guess=tax_new
-        else:final=_bisect_funding(fund,low,high,year)
-        working,wbasis,draws,gain,ira_extra,fed,payroll,tax_due,blocks,sales=final
+        else:final,cliff=_bisect_funding(fund,low,high,year,allow_cliff=spec!=state_tax.EXCLUDED)
+        working,wbasis,draws,gain,ira_extra,fed,payroll,tax_due,blocks,sales,state=final
         carryover=fed['capital_loss_carryover_out']
         proceeds=sum(draws.values())
         total_cash=pre_draw[cash_id]+proceeds
@@ -485,6 +542,8 @@ def run_path(p, annual_portfolio_returns, verify=True):
         unpaid_tax=max(0.,tax_due-tax_paid)
         unmet_spend=max(0.,living-spending_paid)
         working[cash_id]=max(0.,total_cash-tax_paid-spending_paid)
+        if state is not None:
+            state['funding_cliff_excess_cash']=working[cash_id] if cliff else 0.
         bal=working;basis=wbasis
         # Account for any remaining starting cash invested in taxable after funding only when explicitly elected.
         external=sum(wages_by_person)+ss+pension+ev_in
@@ -537,6 +596,7 @@ def run_path(p, annual_portfolio_returns, verify=True):
                 else [{j:(round(n,2) if isinstance(n,float) else n) for j,n in line.items()} for line in v] if k in ('ordinary_bracket_lines','capital_gain_rate_lines')
                 else v) for k,v in fed.items()},
             'payroll_tax':{k:([round(x,2) for x in v] if isinstance(v,list) else round(v,2)) for k,v in payroll.items()},
+            'state_tax':_round_state(state),
             'tax_due_total':round(tax_due,2),'tax_paid':round(tax_paid,2),
             'unpaid_tax':round(unpaid_tax,2),'closing_total':round(end_total,2),
             'closing_total_real':round(end_total/factor,2),
@@ -547,7 +607,8 @@ def run_path(p, annual_portfolio_returns, verify=True):
             'source_ids':['brackets_standard_senior','capital_gains','social_security_tax','payroll',
                           'payroll_2027','senior_enhanced','additional_medicare','niit',
                           '401k_elective_limit_2026','rmd_uniform_lifetime','rmd_birth_1959',
-                          'capital_loss_limit','capital_loss_carryover','qualified_dividends','investment_income'],
+                          'capital_loss_limit','capital_loss_carryover','qualified_dividends','investment_income',
+                          *state_tax.source_ids(spec)],
             'account_flows':{aid:{'contribution':contribs.get(aid,0.),
                 'required_distribution':sum(d['taken'] for d in rmd_detail if d['account']==aid),
                 'roth_conversion_out':sum(t['amount'] for t in conversion_transfers if t['from']==aid),
@@ -560,6 +621,23 @@ def run_path(p, annual_portfolio_returns, verify=True):
                 } for aid in bal}})
     return {'rows':rows,'failed':bool(fail_years),'first_failure_year':min(fail_years) if fail_years else None,
             'notices':notices}
+
+
+def _round_state(state):
+    """State record with the ledger's cent rounding; rates stay exact."""
+    if state is None:
+        return None
+    def money(value):
+        return round(value,2) if isinstance(value,float) else value
+    out={}
+    for key,value in state.items():
+        if key in ('state_bracket_lines','local_tax_lines'):
+            out[key]=[{k:(v if k=='rate' else money(v)) for k,v in line.items()} for line in value]
+        elif key=='members':
+            out[key]={mid:{k:money(v) for k,v in record.items()} for mid,record in value.items()}
+        else:
+            out[key]=money(value)
+    return out
 
 
 def _market_paths(p):
@@ -599,7 +677,7 @@ def wilson_interval(success,total,z=1.96):
 def evidence_status(p):
     """Separate scope and provenance from arithmetic or professional approval."""
     return {
-        'contract_version': '1.2',
+        'contract_version': '1.3',
         'model': 'restricted_research',
         'input': p.get('input_provenance', {}).get('mode', 'not_provided'),
         'input_independently_verified': False,
@@ -655,9 +733,9 @@ def evaluate(p):
     bands=[{'year':p['as_of_year']+j+1,'p10':q_from(vals,.1),
             'p50':q_from(vals,.5),'p90':q_from(vals,.9),
             'paths_funded_to_date':annual_funded[j]} for j,vals in enumerate(annual_quantiles)]
-    engine_source_hash=hashlib.sha256((Path(__file__).read_bytes()+
-                           (Path(__file__).parent/'tax2026.py').read_bytes()+
-                           (Path(__file__).parent/'tax_extensions.py').read_bytes())).hexdigest()
+    engine_source_hash=hashlib.sha256(b''.join((Path(__file__).parent/name).read_bytes()
+                                               for name in ENGINE_FILES)).hexdigest()
+    spec=p['tax_policy']['state_income_tax']
     return {
         'engine_version':'2.2-auditable-restricted','policy':RULESET,'input_sha256':plan_sha,
         'evidence_status':evidence_status(p),
@@ -670,12 +748,15 @@ def evaluate(p):
         'funded_and_target_fraction':round(target_success/a['trials'],5),
         'terminal_real_p10_p50_p90':[quant(.1),quant(.5),quant(.9)],
         'annual_real_percentiles':bands,'simulated_path_manifest':path_manifest,
-        'deterministic_annual_ledger':deterministic,'rules_sources':{**SOURCES,'niit':NIIT_SOURCE},
+        'deterministic_annual_ledger':deterministic,'rules_sources':{**SOURCES,'niit':NIIT_SOURCE,**state_tax.sources(spec)},
         'rule_scope':[
             published_rules_scope(),
             '2026 federal progressive ordinary tax, simplified Social Security taxation, standard/senior deductions, long-term gains, FICA (2027 SSA wage base actual), and selected RMDs modeled.',
             '2026 NIIT on modeled interest, ordinary dividends and Form 1040 line 7a capital gain or allowed loss; MAGI assumes no foreign exclusions; no Form 8960 deductions; thresholds unindexed.',
-            'No state tax, AMT, itemization, tax credits, IRMAA/ACA, inherited accounts, income limits, QCD or employer matching.',
+            ('No state tax (federal-only research scope selected); no AMT, itemization, tax credits, IRMAA/ACA, inherited accounts, income limits, QCD or employer matching.'
+             if spec==state_tax.EXCLUDED else
+             'No AMT, federal itemization or credits, IRMAA/ACA, inherited accounts, income limits, QCD or employer matching.'),
+            *state_tax.scope_lines(spec),
             'Taxable sales use average proportional basis and treat every sale and capital gain distribution as long-term; no lot selection, wash sales or return of capital.',
             'A taxable account labeled long_term_proportional_with_distributions taxes stated dividend, interest and capital gain distribution yields every year, reinvests them into basis, recognizes sale losses, deducts up to $3,000 of net loss and carries the rest forward (adjusted taxable income adds back the section 151 senior deduction). The legacy no-loss-offset label models no distributions and ignores losses.',
             'Social Security benefit amount is supplied for the selected claiming age, with flat assumed COLA; no SSA earnings record, spouse or survivor optimization.',
